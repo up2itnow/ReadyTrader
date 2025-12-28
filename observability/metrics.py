@@ -1,0 +1,66 @@
+from __future__ import annotations
+
+import threading
+import time
+from dataclasses import dataclass
+from typing import Any, Dict
+
+
+@dataclass
+class _Counter:
+    value: int = 0
+
+
+@dataclass
+class _TimerAgg:
+    count: int = 0
+    total_ms: float = 0.0
+    max_ms: float = 0.0
+
+    def observe(self, ms: float) -> None:
+        self.count += 1
+        self.total_ms += ms
+        self.max_ms = max(self.max_ms, ms)
+
+
+class Metrics:
+    """
+    Minimal in-memory metrics registry (Docker-first, no ports required).
+
+    Exposed via an MCP tool (Phase 4) as a snapshot JSON object.
+    """
+
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self._counters: Dict[str, _Counter] = {}
+        self._timers: Dict[str, _TimerAgg] = {}
+        self._started_at = time.time()
+
+    def inc(self, name: str, value: int = 1) -> None:
+        with self._lock:
+            c = self._counters.setdefault(name, _Counter())
+            c.value += int(value)
+
+    def observe_ms(self, name: str, ms: float) -> None:
+        with self._lock:
+            t = self._timers.setdefault(name, _TimerAgg())
+            t.observe(float(ms))
+
+    def snapshot(self) -> Dict[str, Any]:
+        with self._lock:
+            counters = {k: v.value for k, v in self._counters.items()}
+            timers = {
+                k: {
+                    "count": v.count,
+                    "total_ms": round(v.total_ms, 3),
+                    "avg_ms": round(v.total_ms / v.count, 3) if v.count else 0.0,
+                    "max_ms": round(v.max_ms, 3),
+                }
+                for k, v in self._timers.items()
+            }
+        return {
+            "uptime_sec": int(time.time() - self._started_at),
+            "counters": counters,
+            "timers": timers,
+        }
+

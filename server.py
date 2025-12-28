@@ -34,6 +34,7 @@ from intelligence import (
 from learning import Learner
 from market_regime import RegimeDetector
 from marketdata import CcxtMarketDataProvider, IngestMarketDataProvider, InMemoryMarketDataStore, MarketDataBus
+from observability import Metrics, build_log_context, log_event
 from paper_engine import PaperTradingEngine
 from policy_engine import PolicyEngine, PolicyError
 from rate_limiter import FixedWindowRateLimiter, RateLimitError
@@ -68,6 +69,7 @@ learner = Learner()
 policy_engine = PolicyEngine()
 rate_limiter = FixedWindowRateLimiter()
 execution_store = ExecutionStore()
+metrics = Metrics()
 
 # Phase B: idempotency store (per-process, non-persistent)
 IDEMPOTENCY_STORE: Dict[str, Dict[str, Any]] = {}
@@ -188,10 +190,33 @@ def _rate_limit(tool_name: str) -> Optional[str]:
         limit = int(os.getenv(per_min_key, str(exec_per_min)))
 
     try:
+        metrics.inc("rate_limit_checks_total", 1)
         rate_limiter.check(key=f"tool:{tool_key}", limit=limit, window_seconds=60)
         return None
     except RateLimitError as e:
+        metrics.inc("rate_limited_total", 1)
         return _json_err(e.code, e.message, e.data)
+
+
+def _with_observability(tool: str, fn):
+    """
+    Wrap a tool handler to emit structured logs and basic timing metrics.
+    """
+    ctx = build_log_context(tool=tool)
+    started = time.time()
+    log_event("tool_start", ctx=ctx)
+    try:
+        out = fn()
+        metrics.inc(f"tool_{tool}_ok_total", 1)
+        return out
+    except Exception as e:
+        metrics.inc(f"tool_{tool}_error_total", 1)
+        log_event("tool_error", ctx=ctx, data={"error": str(e)})
+        raise
+    finally:
+        elapsed_ms = (time.time() - started) * 1000.0
+        metrics.observe_ms(f"tool_{tool}_latency_ms", elapsed_ms)
+        log_event("tool_end", ctx=ctx, data={"elapsed_ms": round(elapsed_ms, 3)})
 
 def _policy_override_value(key: str, default: Any) -> Any:
     return POLICY_OVERRIDES.get(key, default)
@@ -1189,15 +1214,18 @@ def place_cex_order(
     market_type: str = "spot",
     idempotency_key: str = "",
 ) -> str:
-    return _tool_place_cex_order(
-        symbol=symbol,
-        side=side,
-        amount=amount,
-        order_type=order_type,
-        price=price,
-        exchange=exchange,
-        market_type=market_type,
-        idempotency_key=idempotency_key,
+    return _with_observability(
+        "place_cex_order",
+        lambda: _tool_place_cex_order(
+            symbol=symbol,
+            side=side,
+            amount=amount,
+            order_type=order_type,
+            price=price,
+            exchange=exchange,
+            market_type=market_type,
+            idempotency_key=idempotency_key,
+        ),
     )
 
 
@@ -1242,7 +1270,10 @@ def _tool_get_cex_balance(exchange: str = "binance", market_type: str = "spot") 
 
 @mcp.tool()
 def get_cex_balance(exchange: str = "binance", market_type: str = "spot") -> str:
-    return _tool_get_cex_balance(exchange=exchange, market_type=market_type)
+    return _with_observability(
+        "get_cex_balance",
+        lambda: _tool_get_cex_balance(exchange=exchange, market_type=market_type),
+    )
 
 
 def _tool_get_cex_capabilities(exchange: str = "binance", symbol: str = "", market_type: str = "spot") -> str:
@@ -1266,7 +1297,10 @@ def get_cex_capabilities(exchange: str = "binance", symbol: str = "", market_typ
     """
     Return CCXT capability metadata for a given exchange and optional symbol.
     """
-    return _tool_get_cex_capabilities(exchange=exchange, symbol=symbol, market_type=market_type)
+    return _with_observability(
+        "get_cex_capabilities",
+        lambda: _tool_get_cex_capabilities(exchange=exchange, symbol=symbol, market_type=market_type),
+    )
 
 
 @mcp.tool()
@@ -1274,14 +1308,17 @@ def get_ticker(symbol: str) -> str:
     """
     Return the best available ticker for a symbol using the MarketDataBus.
     """
-    rl = _rate_limit("get_ticker")
-    if rl:
-        return rl
-    try:
-        res = marketdata_bus.fetch_ticker(symbol)
-        return _json_ok({"symbol": symbol, "source": res.source, "ticker": res.data})
-    except Exception as e:
-        return _json_err("ticker_error", str(e), {"symbol": symbol})
+    def _run() -> str:
+        rl = _rate_limit("get_ticker")
+        if rl:
+            return rl
+        try:
+            res = marketdata_bus.fetch_ticker(symbol)
+            return _json_ok({"symbol": symbol, "source": res.source, "ticker": res.data})
+        except Exception as e:
+            return _json_err("ticker_error", str(e), {"symbol": symbol})
+
+    return _with_observability("get_ticker", _run)
 
 
 @mcp.tool()
@@ -1300,22 +1337,25 @@ def ingest_ticker(
     This enables “bring your own data feed”: an agent can fetch market data elsewhere (or via another MCP)
     and push it into ReadyTrader for use in paper simulation and price lookups.
     """
-    rl = _rate_limit("ingest_ticker")
-    if rl:
-        return rl
-    try:
-        marketdata_store.put_ticker(
-            symbol=symbol,
-            last=last,
-            bid=bid,
-            ask=ask,
-            timestamp_ms=timestamp_ms,
-            source=source,
-            ttl_sec=ttl_sec,
-        )
-        return _json_ok({"ingested": True, "symbol": symbol, "ttl_sec": ttl_sec})
-    except Exception as e:
-        return _json_err("ingest_ticker_error", str(e), {"symbol": symbol})
+    def _run() -> str:
+        rl = _rate_limit("ingest_ticker")
+        if rl:
+            return rl
+        try:
+            marketdata_store.put_ticker(
+                symbol=symbol,
+                last=last,
+                bid=bid,
+                ask=ask,
+                timestamp_ms=timestamp_ms,
+                source=source,
+                ttl_sec=ttl_sec,
+            )
+            return _json_ok({"ingested": True, "symbol": symbol, "ttl_sec": ttl_sec})
+        except Exception as e:
+            return _json_err("ingest_ticker_error", str(e), {"symbol": symbol})
+
+    return _with_observability("ingest_ticker", _run)
 
 
 @mcp.tool()
@@ -1333,25 +1373,71 @@ def ingest_ohlcv(
     `ohlcv_json` should be a JSON-encoded list of candles in CCXT format:
     [[timestamp_ms, open, high, low, close, volume], ...]
     """
-    rl = _rate_limit("ingest_ohlcv")
-    if rl:
-        return rl
-    try:
-        data = json.loads(ohlcv_json)
-        if not isinstance(data, list):
-            raise ValueError("ohlcv_json must be a JSON list")
-        marketdata_store.put_ohlcv(symbol=symbol, timeframe=timeframe, limit=limit, ohlcv=data, ttl_sec=ttl_sec)
-        return _json_ok({"ingested": True, "symbol": symbol, "timeframe": timeframe, "limit": limit, "source": source})
-    except Exception as e:
-        return _json_err("ingest_ohlcv_error", str(e), {"symbol": symbol, "timeframe": timeframe})
+    def _run() -> str:
+        rl = _rate_limit("ingest_ohlcv")
+        if rl:
+            return rl
+        try:
+            data = json.loads(ohlcv_json)
+            if not isinstance(data, list):
+                raise ValueError("ohlcv_json must be a JSON list")
+            marketdata_store.put_ohlcv(
+                symbol=symbol,
+                timeframe=timeframe,
+                limit=limit,
+                ohlcv=data,
+                ttl_sec=ttl_sec,
+            )
+            return _json_ok(
+                {"ingested": True, "symbol": symbol, "timeframe": timeframe, "limit": limit, "source": source}
+            )
+        except Exception as e:
+            return _json_err("ingest_ohlcv_error", str(e), {"symbol": symbol, "timeframe": timeframe})
+
+    return _with_observability("ingest_ohlcv", _run)
 
 
 @mcp.tool()
 def get_marketdata_status() -> str:
-    rl = _rate_limit("get_marketdata_status")
+    def _run() -> str:
+        rl = _rate_limit("get_marketdata_status")
+        if rl:
+            return rl
+        return _json_ok({"bus": marketdata_bus.status(), "store": marketdata_store.stats()})
+
+    return _with_observability("get_marketdata_status", _run)
+
+
+@mcp.tool()
+def get_metrics_snapshot() -> str:
+    """
+    Return in-memory counters and timer aggregates.
+    This is the Docker-first default: no extra ports required.
+    """
+    rl = _rate_limit("get_metrics_snapshot")
     if rl:
         return rl
-    return _json_ok({"bus": marketdata_bus.status(), "store": marketdata_store.stats()})
+    return _json_ok(metrics.snapshot())
+
+
+@mcp.tool()
+def get_health() -> str:
+    """
+    Lightweight health/readiness probe for operators.
+    """
+    rl = _rate_limit("get_health")
+    if rl:
+        return rl
+    return _json_ok(
+        {
+            "paper_mode": PAPER_MODE,
+            "execution_mode": _get_execution_mode(),
+            "trading_halted": os.getenv("TRADING_HALTED", "false").lower() == "true",
+            "live_trading_enabled": os.getenv("LIVE_TRADING_ENABLED", "false").lower() == "true",
+            "marketdata": marketdata_bus.status(),
+            "metrics": {"uptime_sec": metrics.snapshot().get("uptime_sec")},
+        }
+    )
 
 
 def _tool_list_cex_open_orders(
@@ -1402,7 +1488,10 @@ def list_cex_open_orders(
     market_type: str = "spot",
     limit: int = 100,
 ) -> str:
-    return _tool_list_cex_open_orders(exchange=exchange, symbol=symbol, market_type=market_type, limit=limit)
+    return _with_observability(
+        "list_cex_open_orders",
+        lambda: _tool_list_cex_open_orders(exchange=exchange, symbol=symbol, market_type=market_type, limit=limit),
+    )
 
 
 def _tool_list_cex_orders(
@@ -1448,7 +1537,10 @@ def _tool_list_cex_orders(
 
 @mcp.tool()
 def list_cex_orders(exchange: str = "binance", symbol: str = "", market_type: str = "spot", limit: int = 100) -> str:
-    return _tool_list_cex_orders(exchange=exchange, symbol=symbol, market_type=market_type, limit=limit)
+    return _with_observability(
+        "list_cex_orders",
+        lambda: _tool_list_cex_orders(exchange=exchange, symbol=symbol, market_type=market_type, limit=limit),
+    )
 
 
 def _tool_get_cex_my_trades(
@@ -1493,7 +1585,10 @@ def _tool_get_cex_my_trades(
 
 @mcp.tool()
 def get_cex_my_trades(exchange: str = "binance", symbol: str = "", market_type: str = "spot", limit: int = 100) -> str:
-    return _tool_get_cex_my_trades(exchange=exchange, symbol=symbol, market_type=market_type, limit=limit)
+    return _with_observability(
+        "get_cex_my_trades",
+        lambda: _tool_get_cex_my_trades(exchange=exchange, symbol=symbol, market_type=market_type, limit=limit),
+    )
 
 
 @mcp.tool()
@@ -1653,16 +1748,19 @@ def get_advanced_risk_disclosure() -> str:
     """
     Returns the advanced risk disclosure for enabling elevated risk limits.
     """
-    rl = _rate_limit("get_advanced_risk_disclosure")
-    if rl:
-        return rl
-    return _json_ok(
-        {
-            "version": ADV_DISCLOSURE_VERSION,
-            "text": ADV_DISCLOSURE_TEXT,
-            "accepted": ADV_DISCLOSURE_ACCEPTED,
-            "accepted_at": ADV_DISCLOSURE_ACCEPTED_AT,
-        }
+    return _with_observability(
+        "get_advanced_risk_disclosure",
+        lambda: (
+            _rate_limit("get_advanced_risk_disclosure")
+            or _json_ok(
+                {
+                    "version": ADV_DISCLOSURE_VERSION,
+                    "text": ADV_DISCLOSURE_TEXT,
+                    "accepted": ADV_DISCLOSURE_ACCEPTED,
+                    "accepted_at": ADV_DISCLOSURE_ACCEPTED_AT,
+                }
+            )
+        ),
     )
 
 @mcp.tool()
@@ -1671,18 +1769,23 @@ def accept_advanced_risk_disclosure(accepted: bool) -> str:
     One-time per-process consent gate for Advanced Risk Mode.
     Resets on restart (non-persistent).
     """
-    rl = _rate_limit("accept_advanced_risk_disclosure")
-    if rl:
-        return rl
-    global ADV_DISCLOSURE_ACCEPTED, ADV_DISCLOSURE_ACCEPTED_AT, POLICY_OVERRIDES
-    if not accepted:
-        ADV_DISCLOSURE_ACCEPTED = False
-        ADV_DISCLOSURE_ACCEPTED_AT = None
-        POLICY_OVERRIDES = {}
-        return _json_ok({"accepted": False, "accepted_at": None, "version": ADV_DISCLOSURE_VERSION})
-    ADV_DISCLOSURE_ACCEPTED = True
-    ADV_DISCLOSURE_ACCEPTED_AT = _now_iso()
-    return _json_ok({"accepted": True, "accepted_at": ADV_DISCLOSURE_ACCEPTED_AT, "version": ADV_DISCLOSURE_VERSION})
+    def _run() -> str:
+        rl = _rate_limit("accept_advanced_risk_disclosure")
+        if rl:
+            return rl
+        global ADV_DISCLOSURE_ACCEPTED, ADV_DISCLOSURE_ACCEPTED_AT, POLICY_OVERRIDES
+        if not accepted:
+            ADV_DISCLOSURE_ACCEPTED = False
+            ADV_DISCLOSURE_ACCEPTED_AT = None
+            POLICY_OVERRIDES = {}
+            return _json_ok({"accepted": False, "accepted_at": None, "version": ADV_DISCLOSURE_VERSION})
+        ADV_DISCLOSURE_ACCEPTED = True
+        ADV_DISCLOSURE_ACCEPTED_AT = _now_iso()
+        return _json_ok(
+            {"accepted": True, "accepted_at": ADV_DISCLOSURE_ACCEPTED_AT, "version": ADV_DISCLOSURE_VERSION}
+        )
+
+    return _with_observability("accept_advanced_risk_disclosure", _run)
 
 @mcp.tool()
 def get_policy_overrides() -> str:
@@ -1866,13 +1969,16 @@ def get_risk_disclosure() -> str:
     """
     Returns the live trading risk disclosure and whether it has been accepted for this process.
     """
-    return _json_ok(
-        {
-            "version": DISCLOSURE_VERSION,
-            "text": DISCLOSURE_TEXT,
-            "accepted": DISCLOSURE_ACCEPTED,
-            "accepted_at": DISCLOSURE_ACCEPTED_AT,
-        }
+    return _with_observability(
+        "get_risk_disclosure",
+        lambda: _json_ok(
+            {
+                "version": DISCLOSURE_VERSION,
+                "text": DISCLOSURE_TEXT,
+                "accepted": DISCLOSURE_ACCEPTED,
+                "accepted_at": DISCLOSURE_ACCEPTED_AT,
+            }
+        ),
     )
 
 @mcp.tool()
@@ -1880,15 +1986,18 @@ def accept_risk_disclosure(accepted: bool) -> str:
     """
     One-time per-process consent gate for live trading. Resets on restart (non-persistent).
     """
-    global DISCLOSURE_ACCEPTED, DISCLOSURE_ACCEPTED_AT
-    if not accepted:
-        DISCLOSURE_ACCEPTED = False
-        DISCLOSURE_ACCEPTED_AT = None
-        return _json_ok({"accepted": False, "accepted_at": None, "version": DISCLOSURE_VERSION})
+    def _run() -> str:
+        global DISCLOSURE_ACCEPTED, DISCLOSURE_ACCEPTED_AT
+        if not accepted:
+            DISCLOSURE_ACCEPTED = False
+            DISCLOSURE_ACCEPTED_AT = None
+            return _json_ok({"accepted": False, "accepted_at": None, "version": DISCLOSURE_VERSION})
 
-    DISCLOSURE_ACCEPTED = True
-    DISCLOSURE_ACCEPTED_AT = _now_iso()
-    return _json_ok({"accepted": True, "accepted_at": DISCLOSURE_ACCEPTED_AT, "version": DISCLOSURE_VERSION})
+        DISCLOSURE_ACCEPTED = True
+        DISCLOSURE_ACCEPTED_AT = _now_iso()
+        return _json_ok({"accepted": True, "accepted_at": DISCLOSURE_ACCEPTED_AT, "version": DISCLOSURE_VERSION})
+
+    return _with_observability("accept_risk_disclosure", _run)
 
 @mcp.tool()
 def run_synthetic_stress_test(strategy_code: str, config_json: str = "{}") -> str:

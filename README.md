@@ -89,6 +89,16 @@ Tools:\n
 * `get_ticker(symbol)`\n
 * `get_marketdata_status()`\n
 
+#### Ops/Observability (Phase 4)\n
+Docker-first approach (no ports required by default).\n
+\n
+Tools:\n
+* `get_metrics_snapshot()`\n
+* `get_health()`\n
+\n
+Operator docs:\n
+* `RUNBOOK.md`\n
+
 #### Phase 6: Rate limiting (in-memory)
 These limits reset when the container restarts.
 * `RATE_LIMIT_DEFAULT_PER_MIN=120`
