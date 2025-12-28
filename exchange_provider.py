@@ -38,7 +38,12 @@ class ExchangeProvider:
     - optional proxy support
     - optional market type selection (spot/future/swap)
     - caching (ticker / ohlcv / markets)
-    - symbol validation + minimal normalization
+    - symbol validation + normalization (best-effort mapping to exchange-listed markets)
+
+    Design notes:
+    - This provider is read-only and used for price/ohlcv aggregation and paper-mode simulation inputs.
+    - When multiple exchanges are configured, it will try each exchange in order until one succeeds.
+    - Caches are in-memory only and reset on process restart.
     """
     def __init__(self, exchanges: Optional[List[ccxt.Exchange]] = None):
         self._ticker_cache: TTLCache[Tuple[str, str], Dict[str, Any]] = TTLCache(max_items=2048)
@@ -98,8 +103,9 @@ class ExchangeProvider:
     def _normalize_symbol(self, exchange: ccxt.Exchange, symbol: str) -> str:
         """
         Best-effort normalization:
-        - If symbol exists in exchange.markets after load_markets(), use as-is.
-        - Otherwise try a small alias mapping (notably Kraken BTC->XBT).
+        - Load exchange markets (cached) and try exact symbol match first.
+        - Try common aliases and base/quote substitutions (e.g., BTC↔XBT, USD↔USDT/USDC).
+        - Fallback to scanning market metadata (base/quote fields) to support exchange-specific symbol formats.
         """
         sym = symbol.strip().upper()
         markets = self._load_markets_cached(exchange)

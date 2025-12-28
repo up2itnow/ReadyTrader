@@ -60,6 +60,9 @@ def generate_synthetic_ohlcv(
     - Stitches multiple regimes
     - Injects black swans and parabolic blow-off tops
 
+    This generator is not intended to model real market microstructure.
+    It exists to stress strategies across varied regimes and tail events while remaining reproducible by seed.
+
     Returns:
       { df: pd.DataFrame, meta: {...} }
     """

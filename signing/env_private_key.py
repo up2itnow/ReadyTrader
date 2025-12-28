@@ -11,6 +11,10 @@ from .base import SignedTx, Signer
 class EnvPrivateKeySigner(Signer):
     """
     Development signer that reads a raw hex private key from PRIVATE_KEY env var.
+
+    Security note:
+    - Environment variables are convenient but are not ideal for production key custody.
+    - Prefer `EncryptedKeystoreSigner` (or a future remote/HSM signer) for production.
     """
 
     def __init__(self, env_var: str = "PRIVATE_KEY") -> None:

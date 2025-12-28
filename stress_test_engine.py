@@ -13,6 +13,13 @@ from synthetic_market import generate_synthetic_ohlcv
 
 
 def _compile_strategy(strategy_code: str):
+    """
+    Compile user strategy code in a RestrictedPython environment.
+
+    Contract:
+    - Must define: `on_candle(...) -> str` returning one of: buy/sell/hold
+    - May define: `PARAMS = {...}` (used for surfacing recommendations and reporting only)
+    """
     def safe_getattr(obj, name):
         if name.startswith("_"):
             raise AttributeError(f"Access to private attribute '{name}' is forbidden")
@@ -130,7 +137,10 @@ def run_synthetic_stress_test(
 ) -> Dict[str, Any]:
     """
     Runs many synthetic scenarios and aggregates stress metrics.
-    Returns structured dict suitable for JSON output.
+
+    The returned dict is designed for MCP JSON output:
+    - `summary`: aggregate metrics + worst-case scenarios (seed + events)
+    - `artifacts`: CSV/JSON blobs for replay/debugging (deterministic by seed)
     """
     master_seed = int(config.get("master_seed", 1))
     scenarios = int(config.get("scenarios", 200))

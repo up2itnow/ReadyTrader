@@ -17,6 +17,10 @@ class EncryptedKeystoreSigner(Signer):
     Env vars:
     - KEYSTORE_PATH: path to keystore json file
     - KEYSTORE_PASSWORD: passphrase
+
+    Security note:
+    - This keeps the private key encrypted at rest (keystore file), but the passphrase still must be protected.
+    - In production, prefer a dedicated secrets manager and consider remote signing/HSM.
     """
 
     def __init__(self, keystore_path_env: str = "KEYSTORE_PATH", password_env: str = "KEYSTORE_PASSWORD") -> None:  # nosec B107

@@ -1,3 +1,13 @@
+"""
+ReadyTrader MCP server.
+
+This module is intentionally the “thin integration layer” that exposes MCP tools to AI agents.
+Core responsibilities:
+- Route requests to the appropriate subsystem (paper trading, CEX, DEX, backtest, synthetic stress).
+- Enforce safety gates for LIVE execution (kill switch, one-time risk disclosure, optional per-trade approval).
+- Apply centralized policy checks (allowlists/limits) and optional advanced overrides (with extra consent).
+"""
+
 import json
 import os
 from datetime import datetime, timezone
@@ -184,6 +194,7 @@ def _effective_overrides() -> Dict[str, float]:
     # Only apply overrides if Advanced Risk consent is accepted.
     if not _advanced_mode_allowed():
         return {}
+    # Normalize values to floats; ignore invalid entries.
     def _to_float(x: Any) -> float | None:
         try:
             return float(x)
@@ -261,6 +272,7 @@ def _get_web3(chain: str) -> Web3:
     env_key = f"CHAIN_RPC_{chain_key.upper()}"
     rpc_url = os.getenv(env_key)
     if not rpc_url:
+        # Production deployments should set CHAIN_RPC_<CHAIN> to a trusted provider.
         rpcs = {
             "ethereum": "https://eth.llamarpc.com",
             "base": "https://base.llamarpc.com",

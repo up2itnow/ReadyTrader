@@ -33,6 +33,11 @@ class PolicyEngine:
     Phase 1 policy enforcement for live execution.
 
     Defaults are permissive (no allowlists) unless env vars are set.
+
+    Philosophy:
+    - The policy engine is a deterministic “deny layer” (it never forces trades).
+    - If an allowlist/limit env var is set, it is enforced strictly.
+    - If unset, the rule is not applied (so dev/demo works out of the box).
     """
 
     def __init__(self) -> None:
