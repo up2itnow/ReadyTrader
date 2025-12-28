@@ -79,6 +79,16 @@ These settings improve market-data reliability and performance via caching, prox
 * `MARKETS_CACHE_TTL_SEC=300`
 * `HTTP_TIMEOUT_SEC=10` (used for external HTTP calls like 1inch API)
 
+#### MarketDataBus: user-provided feeds (Phase 3)
+ReadyTrader supports ingesting market data snapshots from external sources (including other MCP servers).\n
+If present and fresh, ingested snapshots are preferred over CCXT REST.\n
+\n
+Tools:\n
+* `ingest_ticker(symbol, last, bid=None, ask=None, timestamp_ms=None, source='user', ttl_sec=10.0)`\n
+* `ingest_ohlcv(symbol, timeframe, ohlcv_json, limit=100, source='user', ttl_sec=60.0)`\n
+* `get_ticker(symbol)`\n
+* `get_marketdata_status()`\n
+
 #### Phase 6: Rate limiting (in-memory)
 These limits reset when the container restarts.
 * `RATE_LIMIT_DEFAULT_PER_MIN=120`

@@ -33,6 +33,7 @@ from intelligence import (
 )
 from learning import Learner
 from market_regime import RegimeDetector
+from marketdata import CcxtMarketDataProvider, IngestMarketDataProvider, InMemoryMarketDataStore, MarketDataBus
 from paper_engine import PaperTradingEngine
 from policy_engine import PolicyEngine, PolicyError
 from rate_limiter import FixedWindowRateLimiter, RateLimitError
@@ -53,6 +54,13 @@ backtest_engine = BacktestEngine()
 regime_detector = RegimeDetector()
 risk_guardian = RiskGuardian()
 exchange_provider = ExchangeProvider()
+marketdata_store = InMemoryMarketDataStore()
+marketdata_bus = MarketDataBus(
+    [
+        IngestMarketDataProvider(store=marketdata_store),
+        CcxtMarketDataProvider(exchange_provider=exchange_provider),
+    ]
+)
 dex_handler = DexHandler()
 learner = Learner()
 
@@ -290,10 +298,11 @@ def _get_web3(chain: str) -> Web3:
 def _fetch_price(symbol: str, exchange: str = "binance") -> str:
     # We ignore the 'exchange' argument now, as the provider handles routing/fallback
     try:
-        ticker = exchange_provider.fetch_ticker(symbol)
-        last_price = ticker.get('last')
+        res = marketdata_bus.fetch_ticker(symbol)
+        ticker = res.data
+        last_price = ticker.get("last")
         # We report which exchange worked? 
-        return f"The current price of {symbol} is {last_price} (Source: Aggregated)"
+        return f"The current price of {symbol} is {last_price} (Source: {res.source})"
     except Exception as e:
         # Keep legacy string output for helper; MCP tool returns structured JSON wrapper
         return f"Error fetching price for {symbol}: {str(e)}"
@@ -994,7 +1003,8 @@ def _tool_place_cex_order(
         if not paper_engine:
             return _json_err("paper_engine_unavailable", "paper_engine is not initialized.")
         try:
-            ticker = exchange_provider.fetch_ticker(symbol)
+            ticker_res = marketdata_bus.fetch_ticker(symbol)
+            ticker = ticker_res.data
             last = float(ticker.get("last") or 0.0)
             if last <= 0:
                 return _json_err(
@@ -1257,6 +1267,91 @@ def get_cex_capabilities(exchange: str = "binance", symbol: str = "", market_typ
     Return CCXT capability metadata for a given exchange and optional symbol.
     """
     return _tool_get_cex_capabilities(exchange=exchange, symbol=symbol, market_type=market_type)
+
+
+@mcp.tool()
+def get_ticker(symbol: str) -> str:
+    """
+    Return the best available ticker for a symbol using the MarketDataBus.
+    """
+    rl = _rate_limit("get_ticker")
+    if rl:
+        return rl
+    try:
+        res = marketdata_bus.fetch_ticker(symbol)
+        return _json_ok({"symbol": symbol, "source": res.source, "ticker": res.data})
+    except Exception as e:
+        return _json_err("ticker_error", str(e), {"symbol": symbol})
+
+
+@mcp.tool()
+def ingest_ticker(
+    symbol: str,
+    last: float,
+    bid: float | None = None,
+    ask: float | None = None,
+    timestamp_ms: int | None = None,
+    source: str = "user",
+    ttl_sec: float = 10.0,
+) -> str:
+    """
+    Ingest an external ticker snapshot into the in-memory store.
+
+    This enables “bring your own data feed”: an agent can fetch market data elsewhere (or via another MCP)
+    and push it into ReadyTrader for use in paper simulation and price lookups.
+    """
+    rl = _rate_limit("ingest_ticker")
+    if rl:
+        return rl
+    try:
+        marketdata_store.put_ticker(
+            symbol=symbol,
+            last=last,
+            bid=bid,
+            ask=ask,
+            timestamp_ms=timestamp_ms,
+            source=source,
+            ttl_sec=ttl_sec,
+        )
+        return _json_ok({"ingested": True, "symbol": symbol, "ttl_sec": ttl_sec})
+    except Exception as e:
+        return _json_err("ingest_ticker_error", str(e), {"symbol": symbol})
+
+
+@mcp.tool()
+def ingest_ohlcv(
+    symbol: str,
+    timeframe: str,
+    ohlcv_json: str,
+    limit: int = 100,
+    source: str = "user",
+    ttl_sec: float = 60.0,
+) -> str:
+    """
+    Ingest OHLCV into the in-memory store.
+
+    `ohlcv_json` should be a JSON-encoded list of candles in CCXT format:
+    [[timestamp_ms, open, high, low, close, volume], ...]
+    """
+    rl = _rate_limit("ingest_ohlcv")
+    if rl:
+        return rl
+    try:
+        data = json.loads(ohlcv_json)
+        if not isinstance(data, list):
+            raise ValueError("ohlcv_json must be a JSON list")
+        marketdata_store.put_ohlcv(symbol=symbol, timeframe=timeframe, limit=limit, ohlcv=data, ttl_sec=ttl_sec)
+        return _json_ok({"ingested": True, "symbol": symbol, "timeframe": timeframe, "limit": limit, "source": source})
+    except Exception as e:
+        return _json_err("ingest_ohlcv_error", str(e), {"symbol": symbol, "timeframe": timeframe})
+
+
+@mcp.tool()
+def get_marketdata_status() -> str:
+    rl = _rate_limit("get_marketdata_status")
+    if rl:
+        return rl
+    return _json_ok({"bus": marketdata_bus.status(), "store": marketdata_store.stats()})
 
 
 def _tool_list_cex_open_orders(

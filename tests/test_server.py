@@ -13,15 +13,18 @@ from server import _fetch_price, _get_account
 
 
 def test_fetch_price():
-    with patch('server.exchange_provider') as mock_provider:
-        mock_provider.fetch_ticker.return_value = {'last': 50000.0}
+    with patch("server.marketdata_bus") as mock_bus:
+        ticker_res = MagicMock()
+        ticker_res.data = {"last": 50000.0}
+        ticker_res.source = "ccxt_rest"
+        mock_bus.fetch_ticker.return_value = ticker_res
         
         msg = _fetch_price("BTC/USDT")
         assert "50000.0" in msg
 
 def test_fetch_price_error():
-    with patch('server.exchange_provider') as mock_provider:
-        mock_provider.fetch_ticker.side_effect = Exception("All exchanges failed")
+    with patch("server.marketdata_bus") as mock_bus:
+        mock_bus.fetch_ticker.side_effect = Exception("All exchanges failed")
         
         msg = _fetch_price("BTC/USDT")
         assert "Error fetching price" in msg
@@ -115,8 +118,11 @@ def test_place_cex_order_paper_mode_uses_paper_engine():
     with patch.dict("os.environ", {"EXECUTION_MODE": "cex"}):
         with patch("server.PAPER_MODE", True):
             with patch("server.paper_engine") as mock_engine:
-                with patch("server.exchange_provider") as mock_provider:
-                    mock_provider.fetch_ticker.return_value = {"last": 50000.0}
+                with patch("server.marketdata_bus") as mock_bus:
+                    ticker_res = MagicMock()
+                    ticker_res.data = {"last": 50000.0}
+                    ticker_res.source = "ccxt_rest"
+                    mock_bus.fetch_ticker.return_value = ticker_res
                     mock_engine.execute_trade.return_value = "Paper Trade Executed"
                     mock_engine.get_risk_metrics.return_value = {"daily_pnl_pct": 0.0, "drawdown_pct": 0.0}
                     mock_engine.get_portfolio_value_usd.return_value = 100000.0
@@ -132,8 +138,11 @@ def test_place_cex_order_paper_blocked_by_risk():
     with patch.dict("os.environ", {"EXECUTION_MODE": "cex"}):
         with patch("server.PAPER_MODE", True):
             with patch("server.paper_engine") as mock_engine:
-                with patch("server.exchange_provider") as mock_provider:
-                    mock_provider.fetch_ticker.return_value = {"last": 50000.0}
+                with patch("server.marketdata_bus") as mock_bus:
+                    ticker_res = MagicMock()
+                    ticker_res.data = {"last": 50000.0}
+                    ticker_res.source = "ccxt_rest"
+                    mock_bus.fetch_ticker.return_value = ticker_res
                     mock_engine.get_risk_metrics.return_value = {"daily_pnl_pct": 0.0, "drawdown_pct": 0.0}
                     mock_engine.get_portfolio_value_usd.return_value = 1000.0
 
