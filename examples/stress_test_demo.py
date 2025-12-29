@@ -1,5 +1,5 @@
 """
-ReadyTrader Phase 6 — Synthetic Stress Lab demo (offline, deterministic).
+ReadyTrader-Crypto Phase 6 — Synthetic Stress Lab demo (offline, deterministic).
 
 This script runs a randomized synthetic market stress test, then writes exportable artifacts:
 - JSON summary report
@@ -64,7 +64,7 @@ def main() -> int:
         "parabolic_prob": 0.03,
     }
 
-    print("\n=== ReadyTrader Synthetic Stress Lab demo ===")
+    print("\n=== ReadyTrader-Crypto Synthetic Stress Lab demo ===")
     print("Running stress test… (offline)")
     res = run_synthetic_stress_test(strategy_code=_DEMO_STRATEGY_CODE, config=config)
 

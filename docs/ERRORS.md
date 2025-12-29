@@ -1,6 +1,6 @@
 ## ReadyTrader-Crypto Error Codes (Operator Guide)
 
-ReadyTrader tools return JSON in one of these shapes:
+ReadyTrader-Crypto tools return JSON in one of these shapes:
 - Success: `{ "ok": true, "data": {...} }`
 - Error: `{ "ok": false, "error": { "code": "...", "message": "...", "data": {...} } }`
 
@@ -46,7 +46,7 @@ Common examples (non-exhaustive):
   - Meaning: Paper-mode risk checks blocked the trade (e.g., too large relative to portfolio).
   - Fix: reduce size, deposit more paper funds, or adjust the strategy parameters.
 - **`risk_calc_error`**
-  - Meaning: Paper-mode risk calculations failed; ReadyTrader fails closed (safer).
+  - Meaning: Paper-mode risk calculations failed; ReadyTrader-Crypto fails closed (safer).
   - Fix: check paper DB health, ensure prices/metrics can be computed, rerun.
 
 ### Websocket streams (Phase 2.5)

@@ -1,7 +1,7 @@
 """
 Private order update helpers (Phase 2C).
 
-ReadyTrader supports Binance private updates via websocket (see `execution/binance_user_stream.py`).
+ReadyTrader-Crypto supports Binance private updates via websocket (see `execution/binance_user_stream.py`).
 Most other exchanges require exchange-specific websocket auth flows (or CCXT Pro), which we avoid
 to keep the OSS surface area lightweight.
 

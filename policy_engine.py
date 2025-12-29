@@ -179,7 +179,7 @@ class PolicyEngine:
         """
         Optional safeguard: restrict signing to a known allowlist of addresses.
 
-        This helps prevent an operator accidentally pointing ReadyTrader at the wrong signer/key.
+        This helps prevent an operator accidentally pointing ReadyTrader-Crypto at the wrong signer/key.
         """
         addr = (address or "").strip().lower()
         allow = _parse_csv_set(os.getenv("ALLOW_SIGNER_ADDRESSES"))

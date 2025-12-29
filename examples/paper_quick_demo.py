@@ -1,5 +1,5 @@
 """
-ReadyTrader Phase 6 — Paper-mode quick demo (offline).
+ReadyTrader-Crypto Phase 6 — Paper-mode quick demo (offline).
 
 Goal: give a new user a 1-command way to validate that the paper trading engine works:
 - deposits
@@ -33,7 +33,7 @@ def main() -> int:
         db_path = str(Path(td) / "paper_demo.db")
         engine = PaperTradingEngine(db_path=db_path)
 
-        print("\n=== ReadyTrader paper-mode quick demo ===")
+        print("\n=== ReadyTrader-Crypto paper-mode quick demo ===")
 
         print("\n1) Deposit paper funds")
         print(engine.deposit(user_id, "USDC", 10_000.0))

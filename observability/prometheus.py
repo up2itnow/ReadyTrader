@@ -1,7 +1,7 @@
 """
 Prometheus text-format exporter (Phase 4B).
 
-This does NOT start an HTTP server by default. Instead, ReadyTrader exposes a tool that returns
+This does NOT start an HTTP server by default. Instead, ReadyTrader-Crypto exposes a tool that returns
 the text format so operators can scrape it via sidecar, log collection, or periodic polling.
 """
 

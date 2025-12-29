@@ -1,5 +1,5 @@
 """
-ReadyTrader MCP server.
+ReadyTrader-Crypto MCP server.
 
 This module is intentionally the “thin integration layer” that exposes MCP tools to AI agents.
 Core responsibilities:
@@ -1439,7 +1439,7 @@ def ingest_ticker(
     Ingest an external ticker snapshot into the in-memory store.
 
     This enables “bring your own data feed”: an agent can fetch market data elsewhere (or via another MCP)
-    and push it into ReadyTrader for use in paper simulation and price lookups.
+    and push it into ReadyTrader-Crypto for use in paper simulation and price lookups.
     """
     def _run() -> str:
         rl = _rate_limit("ingest_ticker")

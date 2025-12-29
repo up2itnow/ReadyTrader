@@ -42,7 +42,7 @@ def build_evm_tx_intent(tx: Dict[str, Any], *, chain_id: int | None) -> EvmTxInt
     """
     Best-effort extraction of intent fields from a tx dict.
 
-    Works with common Web3/CCXT-style tx dicts used by ReadyTrader.
+    Works with common Web3/CCXT-style tx dicts used by ReadyTrader-Crypto.
     """
     to = tx.get("to")
     if to is not None:

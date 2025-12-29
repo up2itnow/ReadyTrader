@@ -34,8 +34,8 @@ class InMemoryMarketDataStore:
     In-memory store for externally-ingested market data.
 
     This is the main mechanism to support “user-provided feeds or MCPs”:
-    - users/agents can fetch data elsewhere and push snapshots into ReadyTrader via MCP tools
-    - ReadyTrader prefers ingested data when present and fresh
+    - users/agents can fetch data elsewhere and push snapshots into ReadyTrader-Crypto via MCP tools
+    - ReadyTrader-Crypto prefers ingested data when present and fresh
     """
 
     def __init__(self) -> None:

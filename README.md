@@ -1,5 +1,8 @@
 # ReadyTrader-Crypto
 
+[![CI](https://github.com/up2itnow/ReadyTrader-Crypto/actions/workflows/ci.yml/badge.svg)](https://github.com/up2itnow/ReadyTrader-Crypto/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+
 ## Important Disclaimer (Read Before Use)
 
 ReadyTrader-Crypto is provided for informational and educational purposes only and does not constitute financial, investment, legal, or tax advice. Trading digital assets involves substantial risk and may result in partial or total loss of funds. Past performance is not indicative of future results. You are solely responsible for any decisions, trades, configurations, supervision, and the security of your keys/credentials. ReadyTrader-Crypto is provided “AS IS”, without warranties of any kind, and we make no guarantees regarding profitability, performance, availability, or outcomes. By using ReadyTrader-Crypto, you acknowledge and accept these risks.
@@ -104,7 +107,7 @@ These settings improve market-data reliability and performance via caching, prox
 * `HTTP_TIMEOUT_SEC=10` (used for external HTTP calls like 1inch API)
 
 #### MarketDataBus: user-provided feeds (Phase 3)
-ReadyTrader supports ingesting market data snapshots from external sources (including other MCP servers).
+ReadyTrader-Crypto supports ingesting market data snapshots from external sources (including other MCP servers).
 If present and fresh, ingested snapshots are preferred over CCXT REST.
 
 Tools:
@@ -114,7 +117,7 @@ Tools:
 * `get_marketdata_status()`
 
 #### Websocket market data streams (Phase 2.5)
-ReadyTrader can run **opt-in** background websocket ticker streams for top exchanges and prefer them over CCXT REST.
+ReadyTrader-Crypto can run **opt-in** background websocket ticker streams for top exchanges and prefer them over CCXT REST.
 
 Tools:
 * `start_marketdata_ws(exchange, symbols_json, market_type='spot')`
@@ -363,3 +366,4 @@ Example `config_json`:
 - `docs/CUSTODY.md`: key custody + rotation guidance
 - `docs/POSITIONING.md`: credibility-safe marketing + messaging
 - `RELEASE_READINESS_CHECKLIST.md`: what must be green before distribution
+- `CHANGELOG.md`: version-to-version change summary
