@@ -14,6 +14,7 @@ class TickerSnapshot:
     bid: Optional[float]
     ask: Optional[float]
     timestamp_ms: Optional[int]
+    ingested_at_ms: int
     source: str
 
     def to_dict(self) -> Dict[str, Any]:
@@ -23,6 +24,7 @@ class TickerSnapshot:
             "bid": self.bid,
             "ask": self.ask,
             "timestamp_ms": self.timestamp_ms,
+            "ingested_at_ms": self.ingested_at_ms,
             "source": self.source,
         }
 
@@ -51,12 +53,14 @@ class InMemoryMarketDataStore:
         source: str,
         ttl_sec: float,
     ) -> None:
+        now_ms = int(time.time() * 1000)
         snap = TickerSnapshot(
             symbol=symbol.strip().upper(),
             last=float(last),
             bid=float(bid) if bid is not None else None,
             ask=float(ask) if ask is not None else None,
             timestamp_ms=int(timestamp_ms) if timestamp_ms is not None else None,
+            ingested_at_ms=now_ms,
             source=source,
         )
         self._tickers.set((snap.symbol,), snap, ttl_seconds=float(ttl_sec))

@@ -334,6 +334,7 @@ Example `config_json`:
 - `docs/TOOLS.md`: complete tool catalog (generated from `server.py`)
 - `docs/ERRORS.md`: common error codes and operator troubleshooting
 - `docs/EXCHANGES.md`: exchange capability matrix (Supported vs Experimental)
+- `docs/MARKETDATA.md`: market data routing, freshness scoring, plugins, and guardrails
 - `docs/POSITIONING.md`: credibility-safe marketing + messaging
 - `RELEASE_READINESS_CHECKLIST.md`: what must be green before distribution
 - `ROADMAP_10_OF_10.md`: phased plan to reach “10/10” maturity

@@ -193,6 +193,9 @@ class ExchangeProvider:
             try:
                 sym = self._normalize_symbol(exchange, symbol)
                 data = exchange.fetch_ohlcv(sym, timeframe, limit=limit)
+                # Attach minimal provenance for downstream selection logic.
+                # (Does not change the core list payload.)
+                # NOTE: consumers that need provenance should use MarketDataBus/provider metadata.
                 self._ohlcv_cache.set(cache_key, data, ttl_seconds=ttl)
                 return data
             except Exception as e:
@@ -221,6 +224,12 @@ class ExchangeProvider:
             try:
                 sym = self._normalize_symbol(exchange, symbol)
                 data = exchange.fetch_ticker(sym)
+                # Attach minimal provenance for downstream selection logic.
+                try:
+                    data["exchange_id"] = getattr(exchange, "id", None)
+                    data["normalized_symbol"] = sym
+                except Exception:
+                    _ = False
                 self._ticker_cache.set(cache_key, data, ttl_seconds=ttl)
                 return data
             except Exception as e:

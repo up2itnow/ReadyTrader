@@ -43,6 +43,7 @@ from marketdata import (
     InMemoryMarketDataStore,
     MarketDataBus,
     WsStreamManager,
+    load_marketdata_plugins,
 )
 from observability import AuditLog, Metrics, build_log_context, log_event, now_ms
 from paper_engine import PaperTradingEngine
@@ -74,6 +75,7 @@ marketdata_bus = MarketDataBus(
     [
         IngestMarketDataProvider(store=marketdata_store),
         IngestMarketDataProvider(store=marketdata_ws_store, provider_id="exchange_ws"),
+        *load_marketdata_plugins(),
         CcxtMarketDataProvider(exchange_provider=exchange_provider),
     ]
 )
@@ -1377,7 +1379,7 @@ def get_ticker(symbol: str) -> str:
             return rl
         try:
             res = marketdata_bus.fetch_ticker(symbol)
-            return _json_ok({"symbol": symbol, "source": res.source, "ticker": res.data})
+            return _json_ok({"symbol": symbol, "source": res.source, "ticker": res.data, "meta": res.meta})
         except Exception as e:
             return _json_err("ticker_error", str(e), {"symbol": symbol})
 
