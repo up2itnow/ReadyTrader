@@ -1,10 +1,17 @@
-## ReadyTrader-Crypto Error Codes (Operator Guide)
+### 🚨 Quick Fix Troubleshooting
 
-ReadyTrader-Crypto tools return JSON in one of these shapes:
-- Success: `{ "ok": true, "data": {...} }`
-- Error: `{ "ok": false, "error": { "code": "...", "message": "...", "data": {...} } }`
+If you are just getting started and seeing errors, check these first:
 
-This page documents the most common high-impact error codes and what to do.
+| Issue | Quick Fix | Reference |
+| :--- | :--- | :--- |
+| **Missing .env** | Run `python tools/setup_wizard.py` to generate one. | [Setup Wizard](file:///Users/billwilson_home/Desktop/RealTrader-Crypto/tools/setup_wizard.py) |
+| **Missing Keys** | Check `docs/SENTIMENT.md` for links to get free API keys. | [Sentiment Guide](file:///Users/billwilson_home/Desktop/RealTrader-Crypto/docs/SENTIMENT.md) |
+| **Blocked Trade** | Your trade might violate the `RISK_PROFILE`. Use `conservative` for safety. | [README.md](file:///Users/billwilson_home/Desktop/RealTrader-Crypto/README.md) |
+| **Python Errors** | Run `pip install -r requirements.txt` to ensure dependencies are met. | [requirements.txt](file:///Users/billwilson_home/Desktop/RealTrader-Crypto/requirements.txt) |
+
+---
+
+### ReadyTrader-Crypto Error Codes (Operator Guide)
 
 ### Live trading governance
 - **`live_trading_disabled`**

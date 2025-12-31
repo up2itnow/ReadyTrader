@@ -24,6 +24,12 @@ import time
 from dataclasses import dataclass
 from typing import Any, Dict, Optional
 
+# Phase 2: Webhooks for notifications
+try:
+    from observability.webhooks import WebhookManager
+except ImportError:
+    WebhookManager = None
+
 
 @dataclass
 class ExecutionProposal:
@@ -55,7 +61,10 @@ class ExecutionStore:
         return bool(self._db_path())
 
     def _db_path(self) -> str:
-        return (os.getenv("READYTRADER_EXECUTION_DB_PATH") or os.getenv("EXECUTION_DB_PATH") or "").strip()
+        default = "data/execution.db"
+        p = (os.getenv("READYTRADER_EXECUTION_DB_PATH") or os.getenv("EXECUTION_DB_PATH") or default).strip()
+        os.makedirs(os.path.dirname(p), exist_ok=True)
+        return p
 
     def _get_conn(self) -> Optional[sqlite3.Connection]:
         path = self._db_path()
@@ -178,6 +187,19 @@ class ExecutionStore:
             )
             self._items[request_id] = prop
             self._persist(prop)
+            
+            # Phase 2: Notification callback
+            if WebhookManager:
+                # Attempt to extract symbol and amount for a prettier message
+                amount = float(payload.get("amount") or 0.0)
+                symbol = str(payload.get("symbol") or payload.get("from_token", "Unknown"))
+                WebhookManager.notify_approval_required(
+                    kind=kind,
+                    amount=amount,
+                    symbol=symbol,
+                    request_id=request_id
+                )
+            
             return prop
 
     def get(self, request_id: str) -> Optional[ExecutionProposal]:

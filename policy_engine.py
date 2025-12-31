@@ -70,6 +70,29 @@ class PolicyEngine:
         # Intentionally stateless in Phase 1
         pass
 
+    def validate_insight_backing(self, *, symbol: str, insight_id: str, insights: List[Any]) -> float:
+        """
+        [PHASE 3] Verify that a trade is backed by a high-confidence insight.
+        Returns the confidence score if it matches the symbol and is not expired.
+        """
+        if not insight_id:
+            return 0.0
+            
+        sym = symbol.strip().upper()
+        for ins in insights:
+            # Note: ins is a MarketInsight-like object (or dict from vars(ins))
+            ins_id = getattr(ins, "insight_id", None) or ins.get("insight_id")
+            ins_sym = getattr(ins, "symbol", None) or ins.get("symbol")
+            if ins_id == insight_id and ins_sym == sym:
+                conf = getattr(ins, "confidence", 0.0) or ins.get("confidence", 0.0)
+                return float(conf)
+        
+        raise PolicyError(
+            code="insight_not_found",
+            message=f"No valid insight found for {symbol} with ID {insight_id}",
+            data={"symbol": symbol, "insight_id": insight_id}
+        )
+
     def validate_swap(
         self,
         *,

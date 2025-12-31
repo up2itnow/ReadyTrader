@@ -41,6 +41,10 @@ class InMemoryMarketDataStore:
     def __init__(self) -> None:
         self._tickers: TTLCache[Tuple[str], TickerSnapshot] = TTLCache(max_items=4096)
         self._ohlcv: TTLCache[Tuple[str, str, int], List[Any]] = TTLCache(max_items=1024)
+        self._callbacks: List[callable] = []
+
+    def subscribe(self, callback: callable) -> None:
+        self._callbacks.append(callback)
 
     def put_ticker(
         self,
@@ -64,6 +68,13 @@ class InMemoryMarketDataStore:
             source=source,
         )
         self._tickers.set((snap.symbol,), snap, ttl_seconds=float(ttl_sec))
+        
+        # Phase 2: Notify subscribers
+        for cb in self._callbacks:
+            try:
+                cb(snap)
+            except Exception:
+                pass
 
     def get_ticker(self, *, symbol: str) -> Optional[TickerSnapshot]:
         return self._tickers.get((symbol.strip().upper(),))

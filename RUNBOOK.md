@@ -99,6 +99,6 @@
   - Keep `EXECUTION_APPROVAL_MODE=approve_each` while validating new configs
 
 ### Backup/restore (paper mode)
-- Paper ledger is stored in `paper.db` (ignored by git).
+- Paper ledger is stored in `data/paper.db` (ignored by git).
 - Back up by copying the file while the container is stopped.
 

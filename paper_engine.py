@@ -1,11 +1,13 @@
+import os
 import sqlite3
 from datetime import datetime, timezone
 from typing import Dict, List, Optional
 
 
 class PaperTradingEngine:
-    def __init__(self, db_path: str = "paper.db"):
-        self.db_path = db_path
+    def __init__(self, db_path: Optional[str] = None):
+        self.db_path = db_path or os.getenv("READYTRADER_PAPER_DB_PATH", os.getenv("PAPER_DB_PATH", "data/paper.db"))
+        os.makedirs(os.path.dirname(self.db_path), exist_ok=True)
         self._init_db()
         
     def _init_db(self):
@@ -144,6 +146,17 @@ class PaperTradingEngine:
         conn.close()
         self._snapshot_equity(user_id)
         return f"Deposited {amount} {asset}. New Balance: {new_balance}"
+
+    def reset_wallet(self, user_id: str) -> str:
+        """Clear all balances and trade history for a user in paper mode."""
+        conn = sqlite3.connect(self.db_path)
+        c = conn.cursor()
+        c.execute("DELETE FROM balances WHERE user_id=?", (user_id,))
+        c.execute("DELETE FROM orders WHERE user_id=?", (user_id,))
+        c.execute("DELETE FROM equity_snapshots WHERE user_id=?", (user_id,))
+        conn.commit()
+        conn.close()
+        return f"Paper wallet and history for {user_id} have been reset."
 
     def place_limit_order(self, user_id: str, side: str, symbol: str, amount: float, price: float) -> str:
         """

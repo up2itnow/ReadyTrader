@@ -21,6 +21,11 @@ try:
 except ImportError:
     NewsApiClient = None
 
+try:
+    import feedparser
+except ImportError:
+    feedparser = None
+
 def get_fear_greed_index() -> str:
     """
     Fetch the Crypto Fear & Greed Index from alternative.me.
@@ -57,6 +62,45 @@ def get_market_news() -> str:
         return "Error: No news found via CryptoPanic."
     except Exception as e:
         return f"Error fetching CryptoPanic news: {str(e)}"
+
+def fetch_rss_news(symbol: str = "") -> str:
+    """
+    Fetch free market news from RSS feeds (CoinDesk, Cointelegraph).
+    This provides 'Free' news without requiring API keys.
+    """
+    if not feedparser:
+        return "Error: feedparser library not installed. Cannot fetch RSS news."
+    
+    feeds = [
+        ("CoinDesk", "https://www.coindesk.com/arc/outboundfeeds/rss/"),
+        ("Cointelegraph", "https://cointelegraph.com/rss")
+    ]
+    
+    all_headlines = []
+    
+    for name, url in feeds:
+        try:
+            feed = feedparser.parse(url)
+            # Take top 3 from each
+            count = 0
+            for entry in feed.entries:
+                if count >= 3:
+                    break
+                # If symbol is provided, check if it's in the title/summary (case-insensitive)
+                if symbol and symbol.lower() not in entry.title.lower() and symbol.lower() not in entry.summary.lower():
+                    continue
+                
+                all_headlines.append(f"{entry.title} ({name})")
+                count += 1
+        except Exception as e:
+            all_headlines.append(f"Error fetching {name} feed: {str(e)}")
+            
+    if not all_headlines:
+        if symbol:
+            return f"No RSS news found matching '{symbol}' in recent feeds."
+        return "No RSS news found."
+        
+    return "Market News (Free RSS):\n" + "\n".join([f"{i+1}. {h}" for i, h in enumerate(all_headlines[:6])])
 
 
 class SentimentCache:
@@ -149,11 +193,12 @@ def analyze_social_sentiment(symbol: str) -> str:
     if "API Key missing" in twitter_result and "API Key missing" in reddit_result:
         # Fallback to simulation
         # In simulation, we generate a random score to simulate "Live" data changing
-        # Simulation-only randomness (not cryptographic).
         score = random.uniform(-0.5, 0.9)  # nosec B311
         final_output = (
-            f"(Simulated) Social Sentiment for {symbol}: Score {score:.2f}. "
-            "(Set TWITTER_BEARER_TOKEN or REDDIT_CLIENT_ID to use Real Data)"
+            f"(Simulated) Social Sentiment for {symbol}: Score {score:.2f}.\n"
+            "SYSTEM NOTE: Real-time sentiment is currently disabled. To enable:\n"
+            "1. X (Twitter): Get a Bearer Token from https://developer.x.com/ and set TWITTER_BEARER_TOKEN\n"
+            "2. Reddit: Create an app at https://www.reddit.com/prefs/apps and set REDDIT_CLIENT_ID and REDDIT_CLIENT_SECRET"
         )
     
     # Update Cache
@@ -161,13 +206,17 @@ def analyze_social_sentiment(symbol: str) -> str:
     
     return final_output
 
+
 def fetch_financial_news(symbol: str) -> str:
     """
     Fetch financial news using NewsAPI.
     """
     api_key = os.getenv("NEWSAPI_KEY")
     if not api_key or not NewsApiClient:
-         return "(Simulated) Financial News: Bloomberg reports positive outlook. (Set NEWSAPI_KEY for real news)"
+         return (
+             "(Simulated) Financial News: Bloomberg reports positive outlook.\n"
+             "SYSTEM NOTE: To enable real high-tier financial news, get an API key from https://newsapi.org/ and set NEWSAPI_KEY in your .env file."
+         )
          
     try:
         newsapi = NewsApiClient(api_key=api_key)

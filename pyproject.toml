@@ -11,7 +11,7 @@ addopts = "-q"
 [tool.ruff]
 line-length = 120
 target-version = "py312"
-extend-exclude = ["paper.db"]
+extend-exclude = ["data/"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I"]

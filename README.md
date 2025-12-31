@@ -11,17 +11,56 @@ See also: `DISCLAIMER.md`.
 
 ---
 
-**Turn your AI Agent into a risk-aware crypto trading operator.**
+---
 
-This MCP (Model Context Protocol) Server provides a complete suite of cryptocurrency trading tools for AI agents. It goes beyond simple buy/sell commands, offering a "Risk-Aware" and "Regime-Adaptive" architecture.
+## 🌎 The Big Picture
+
+**ReadyTrader-Crypto** is a specialized bridge that turns your AI Agent (like Gemini or Claude) into a professional crypto trading operator. 
+
+Think of it this way: Your AI agent provides the **Intelligence** (analyzing charts, news, and sentiment), while ReadyTrader-Crypto provides the **Hands** (connecting to exchanges) and the **Safety Brakes** (enforcing your risk rules). It allows you to delegate complex trading tasks to an AI without giving it unchecked access to your funds.
+
+## 🛡️ The Trust Model: Intelligence vs. Execution
+
+The core philosophy of this project is a strict separation of powers:
+
+*   **The AI Agent (The Brain):** Decides *what* and *when* to trade. It can research historical data, scan social media, and simulate strategies, but it has no direct power to move money.
+*   **The MCP Server (The Guardrail):** Owns the API keys and enforces your safety policies. It filters every AI request through a "Risk Guardian" that rejects any trade that is too large, too risky, or violates your personal limits.
+
+## 🔄 A Day in the Life of a Trade
+
+1.  **Research:** You ask your agent, "Find a good entry for BTC." The agent calls `fetch_ohlcv` and `get_sentiment`.
+2.  **Proposal:** The agent concludes, "BTC is oversold; I want to buy $100." It calls `place_limit_order`.
+3.  **Governance:** The MCP server checks its rules. Is $100 within your `MAX_TRADE_AMOUNT`? If yes, it creates a **Pending Execution**.
+4.  **Consent:** If you've enabled "Human-in-the-loop," the agent notifies you. You click **Confirm** in the [Web UI](#-optional-web-ui), and only then does the trade hit the exchange.
+
+---
+
+### 🖥️ Premium Next.js Dashboard
+
+`ReadyTrader-Crypto` includes a professional Next.js dashboard for real-time monitoring, multi-agent coordination, and trade approvals.
+
+**How to Enable:**
+1.  Navigate to the directory: `cd frontend`
+2.  Install dependencies: `npm install`
+3.  Run the development server: `npm run dev`
+4.  Access it at `http://localhost:3000`.
+
+**Features:**
+-   **Real-time Tickers**: Low-latency price streaming via WebSockets.
+-   **Multi-Agent Insights**: Shared "Market Insights" for collaborative research.
+-   **Mobile Guard**: Push notifications for trades requiring manual approval.
+-   **Glassmorphic UI**: High-performance charting and portfolio visualization.
+
+---
 
 ## 🚀 Key Features
 
-*   **📉 Paper Trading Simulator**: Zero-risk practice environment with persistent balances and realistic order handling (Limit & Market).
-*   **🧠 Strategy Factory**: Built-in Backtesting Engine. Agents can write Python strategies, run them against historical data, and get instant PnL feedback.
-*   **🛡️ Risk Guardian**: Hard-coded safety layer. Automatically rejects trade requests that violate risk management rules (e.g., Position Sizing > 5%, "Falling Knife" protection).
-*   **☀️ Market Regime Detection**: "Self-Awareness" of market conditions. Detects if the market is **Trending**, **Ranging (Chop)**, or **Volatile** using ADX/ATR.
-*   **📰 Advanced Intelligence**: Optional sentiment/news inputs (simulated by default) so agents can prototype workflows without wiring paid APIs.
+*   **📉 Paper Trading Simulator**: Zero-risk practice environment with persistent balances and realistic order handling.
+*   **🧠 Strategy Factory**: Built-in Backtesting Engine with a **Strategy Marketplace** for saving and sharing agent configurations.
+*   **🏦 Deep DeFi Integration**: Direct support for **Aave V3** (Lending) and **Uniswap V3** (Concentrated Liquidity).
+*   **🛡️ Risk Guardian**: Hard-coded safety layer. Automatically rejects trade requests that violate risk rules.
+*   **🤝 Multi-Agent Orchestration**: Support for "Researcher" and "Executor" agent handoffs via a shared **Insight Store**.
+*   **📰 Advanced Intelligence**: Real-time sentiment feeds from X, Reddit, and News APIs with local NLP fallbacks.
 
 ---
 
@@ -63,130 +102,56 @@ fastmcp run server.py
 ```
 
 ### 2. Configuration (`.env`)
-Create a `.env` file or pass environment variables:
-*   Start from `env.example` (copy to `.env`; never commit real secrets)
-*   `PAPER_MODE=true` (Default: Safe simulation mode. Set `false` for real trading)
-*   `PRIVATE_KEY=...` (Required ONLY if `PAPER_MODE=false`)
 
-#### Live Trading Safety (Phase 0/1)
-When `PAPER_MODE=false`, **live execution is still blocked by default** until you explicitly enable it and provide one-time consent (per container run).
+Create a `.env` file or pass environment variables. Start from `env.example` (copy to `.env`).
 
-*   `LIVE_TRADING_ENABLED=false` (Default. Must be `true` to allow live execution)
-*   `TRADING_HALTED=false` (Kill switch. Set `true` to halt live trading immediately)
-*   `EXECUTION_MODE=dex` (Options: `dex`, `cex`, `hybrid`)
-*   **Execution approval mode** (user-selectable):
-    - `EXECUTION_APPROVAL_MODE=auto` (default) executes trades immediately
-    - `EXECUTION_APPROVAL_MODE=approve_each` returns proposals and requires `confirm_execution`
-  Backward compatible: `HUMAN_CONFIRMATION=true` implies `EXECUTION_APPROVAL_MODE=approve_each`.
+<details>
+<summary><b>🛡️ Live Trading Safety & Approval</b></summary>
 
-#### Optional Policy Controls (Phase 1)
-These are **deny-by-policy only if set** (if unset, the policy engine is permissive).
+| Variable | Default | Description |
+| :--- | :--- | :--- |
+| `PAPER_MODE` | `true` | Set to `false` for live trading. |
+| `LIVE_TRADING_ENABLED` | `false` | Must be `true` for any live execution. |
+| `TRADING_HALTED` | `false` | Global kill switch to halt all live actions. |
+| `EXECUTION_APPROVAL_MODE` | `auto` | `auto` executes immediately; `approve_each` requires manual confirmation. |
+| `API_PORT` | `8000` | Port for the FastAPI/WebSocket server (`api_server.py`). |
+| `DISCORD_WEBHOOK_URL`| `""` | Optional webhook for trade approval notifications. |
+</details>
 
-*   `ALLOW_CHAINS=ethereum,base,arbitrum,optimism`
-*   `ALLOW_TOKENS=usdc,weth,usdt,eth` (symbol allowlist; case-insensitive)
-*   `ALLOW_ROUTERS=0xrouter1,0xrouter2` (DEX router/spender allowlist)
-*   `MAX_TRADE_AMOUNT=1000` (max `amount` passed to `swap_tokens`)
-*   `MAX_TRADE_AMOUNT_USDC=5000` (token-specific max)
-*   `MAX_TRANSFER_NATIVE=0.1` (max native transfer amount)
-*   `ALLOW_TO_ADDRESSES=0xabc...,0xdef...` (native transfer recipient allowlist)
-*   `DEX_SLIPPAGE_PCT=1.0` (passed to the 1inch swap API builder)
-*   `ALLOW_EXCHANGES=binance,kraken,coinbase` (CEX allowlist)
-*   `ALLOW_CEX_SYMBOLS=btc/usdt,eth/usdt` (CEX symbol allowlist; case-insensitive)
-*   `ALLOW_CEX_MARKET_TYPES=spot,swap,future` (CEX market-type allowlist; `swap` = perpetuals)
-*   `MAX_CEX_ORDER_AMOUNT=0.05` (max base-asset amount per CEX order)
+<details>
+<summary><b>🔑 Exchange & Signing Credentials</b></summary>
 
-#### Market data connector tuning (CCXT) — competitive parity with CCXT MCP servers
-These settings improve market-data reliability and performance via caching, proxy support, and market-type selection.
+| Variable | Description |
+| :--- | :--- |
+| `PRIVATE_KEY` | Hex private key for signing (if `SIGNER_TYPE=env_private_key`). |
+| `CEX_API_KEY` | API Key for your primary exchange. |
+| `CEX_API_SECRET` | API Secret for your primary exchange. |
+| `SIGNER_TYPE` | `env_private_key`, `keystore`, or `remote`. |
+| `CEX_BINANCE_API_KEY` | Exchange-specific keys (e.g., `CEX_BINANCE_...`). |
+</details>
 
-* `MARKETDATA_EXCHANGES=binance,kraken,coinbase,kucoin,bybit` (fallback order)
-* `CCXT_DEFAULT_TYPE=spot` (or `future` / `swap`, exchange-dependent)
-* `CCXT_PROXY=http://127.0.0.1:7890` (or use `HTTP_PROXY` / `HTTPS_PROXY`)
-* `TICKER_CACHE_TTL_SEC=5`
-* `OHLCV_CACHE_TTL_SEC=60`
-* `MARKETS_CACHE_TTL_SEC=300`
-* `HTTP_TIMEOUT_SEC=10` (used for external HTTP calls like 1inch API)
+<details>
+<summary><b>📈 Market Data & CCXT Tuning</b></summary>
 
-#### MarketDataBus: user-provided feeds (Phase 3)
-ReadyTrader-Crypto supports ingesting market data snapshots from external sources (including other MCP servers).
-If present and fresh, ingested snapshots are preferred over CCXT REST.
+| Variable | Default | Description |
+| :--- | :--- | :--- |
+| `MARKETDATA_EXCHANGES` | `binance...` | Comma-separated list of exchanges to use for data. |
+| `TICKER_CACHE_TTL_SEC` | `5` | How long to cache price data. |
+| `DEX_SLIPPAGE_PCT` | `1.0` | Default slippage for DEX swaps. |
+| `ALLOW_TOKENS` | `*` | Comma-separated allowlist of tradeable tokens. |
+</details>
 
-Tools:
-* `ingest_ticker(symbol, last, bid=None, ask=None, timestamp_ms=None, source='user', ttl_sec=10.0)`
-* `ingest_ohlcv(symbol, timeframe, ohlcv_json, limit=100, source='user', ttl_sec=60.0)`
-* `get_ticker(symbol)`
-* `get_marketdata_status()`
+<details>
+<summary><b>🛠️ Ops, Observability & Limits</b></summary>
 
-#### Websocket market data streams (Phase 2.5)
-ReadyTrader-Crypto can run **opt-in** background websocket ticker streams for top exchanges and prefer them over CCXT REST.
+| Variable | Default | Description |
+| :--- | :--- | :--- |
+| `RATE_LIMIT_DEFAULT_PER_MIN` | `120` | Default API rate limit. |
+| `RISK_PROFILE` | `conservative`| Presets for sizing and safety limits. |
+| `ALLOW_CHAINS` | `ethereum...` | Allowlists for EVM networks. |
+</details>
 
-Tools:
-* `start_marketdata_ws(exchange, symbols_json, market_type='spot')`
-* `stop_marketdata_ws(exchange, market_type='spot')`
-
-Optional private order updates (Phase 2.5):
-* `start_cex_private_ws(exchange='binance', market_type='spot')`
-* `stop_cex_private_ws(exchange='binance', market_type='spot')`
-* `list_cex_private_updates(exchange='binance', market_type='spot', limit=100)`
-
-#### Ops/Observability (Phase 4)
-Docker-first approach (no ports required by default).
-
-Tools:
-* `get_metrics_snapshot()`
-* `get_health()`
-
-Operator docs:
-* `RUNBOOK.md`
-
-#### Phase 6: Rate limiting (in-memory)
-These limits reset when the container restarts.
-* `RATE_LIMIT_DEFAULT_PER_MIN=120`
-* `RATE_LIMIT_EXECUTION_PER_MIN=20`
-* Per-tool override: `RATE_LIMIT_SWAP_TOKENS_PER_MIN=5` (tool names are uppercased)
-
-#### Phase 6: Two-step execution confirmation (optional)
-If `EXECUTION_APPROVAL_MODE=approve_each` (or `HUMAN_CONFIRMATION=true`), live execution tools return a proposal with `request_id` + `confirm_token`.
-Use:
-* `list_pending_executions()`
-* `confirm_execution(request_id, confirm_token)` (single-use, TTL)
-* `cancel_execution(request_id)`
-
-#### Phase 6: Advanced Risk Mode (urgent consent)
-Advanced mode allows raising certain hard limits **at runtime** (in-memory only; resets on restart).
-1) Call `get_advanced_risk_disclosure()`
-2) Call `accept_advanced_risk_disclosure(true)`
-3) Call `set_policy_overrides('{"MAX_TRADE_AMOUNT": 5000, "MAX_CEX_ORDER_AMOUNT": 1.0}')`
-You can review with `get_policy_overrides()`.
-
-#### Risk profiles (Phase C)
-You can select a risk profile (per-process) to set reasonable default hard limits:
-- `conservative` (default)
-- `balanced`
-- `aggressive` (requires Advanced Risk consent)
-
-Use:
-* `get_execution_preferences()`
-* `set_execution_preferences(execution_approval_mode='auto', risk_profile='balanced')`
-
-#### One-time (per run) risk disclosure consent
-In live mode, the MCP will reject all execution tools until consent is granted:
-1. Call `get_risk_disclosure()` to retrieve the disclosure text.
-2. Call `accept_risk_disclosure(true)` once to enable live execution for **this process only**.
-   - Consent resets every time the container restarts.
-
-#### Signing configuration (Phase 2)
-By default, live signing uses a raw private key from `PRIVATE_KEY` (development only). For better security, use an encrypted keystore.
-
-* `SIGNER_TYPE=env_private_key` (default) or `SIGNER_TYPE=keystore` or `SIGNER_TYPE=remote`
-* If `SIGNER_TYPE=env_private_key`: set `PRIVATE_KEY=...`
-* If `SIGNER_TYPE=keystore`:
-  - `KEYSTORE_PATH=/path/to/keystore.json`
-  - `KEYSTORE_PASSWORD=...`
-* If `SIGNER_TYPE=remote`:
-  - `SIGNER_REMOTE_URL=http://signer:8080` (must expose `/address` and `/sign_transaction`)
-
-Optional signer allowlist:
-* `ALLOW_SIGNER_ADDRESSES=0xabc...,0xdef...` (deny unless signer address is allowlisted)
+---
 
 #### CEX credentials (Phase 3)
 To place CEX orders or fetch CEX balances, configure ccxt credentials via env.

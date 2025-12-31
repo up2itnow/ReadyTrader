@@ -7,7 +7,8 @@ __pycache__/
 venv/
 env/
 
-# Database (Paper Trading)
+# Database (Paper Trading & Stores)
+data/
 paper.db
 
 # Demo / local artifacts (Phase 6)

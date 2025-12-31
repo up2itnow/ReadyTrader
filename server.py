@@ -20,6 +20,8 @@ from fastmcp import FastMCP
 from web3 import Web3
 
 from backtest_engine import BacktestEngine
+from defi.aave_v3 import AaveV3Client
+from defi.uniswap_v3 import UniswapV3Client
 from dex_handler import DexHandler
 from exchange_provider import ExchangeProvider
 from execution.binance_user_stream import BinanceUserStreamManager
@@ -34,6 +36,7 @@ from intelligence import (
     get_cached_sentiment_score,
     get_fear_greed_index,
     get_market_news,
+    InsightStore,
 )
 from learning import Learner
 from market_regime import RegimeDetector
@@ -55,6 +58,7 @@ from risk_manager import RiskGuardian
 from signing import get_signer
 from signing.intents import build_evm_tx_intent
 from signing.policy import SignerPolicyViolation
+from strategy.marketplace import StrategyRegistry
 from stress_test_engine import run_synthetic_stress_test as _run_synth_stress
 
 load_dotenv()
@@ -88,13 +92,16 @@ marketdata_bus = MarketDataBus(
     ]
 )
 dex_handler = DexHandler()
-learner = Learner()
+# Link learner to the same DB as paper engine
+learner = Learner(db_path=paper_engine.db_path) if PAPER_MODE else None
 
 # Phase 1: Central policy engine (always-on for live execution)
 policy_engine = PolicyEngine()
 rate_limiter = FixedWindowRateLimiter()
 execution_store = ExecutionStore()
 idempotency_store = IdempotencyStore()
+insight_store = InsightStore()
+strategy_registry = StrategyRegistry()
 
 _IDEMPOTENCY_LOCK = threading.Lock()
 
@@ -614,7 +621,41 @@ def get_financial_news(symbol: str) -> str:
         return rl
     return _json_ok({"symbol": symbol, "financial_news": fetch_financial_news(symbol)})
 
-# --- Paper Trading Tools ---
+@mcp.tool()
+def get_free_news(symbol: str = "") -> str:
+    """
+    Get free market news from RSS feeds (CoinDesk, Cointelegraph).
+    No API keys required.
+    """
+    rl = _rate_limit("get_free_news")
+    if rl:
+        return rl
+    return _json_ok({"symbol": symbol, "news": fetch_rss_news(symbol)})
+
+@mcp.tool()
+def post_market_insight(symbol: str, agent_id: str, signal: str, confidence: float, reasoning: str, ttl_seconds: int = 3600) -> str:
+    """
+    [PHASE 3] Share a market insight with other agents.
+    Signal should be 'bullish', 'bearish', or 'neutral'.
+    Confidence should be between 0.0 and 1.0.
+    """
+    rl = _rate_limit("post_market_insight")
+    if rl:
+        return rl
+    insight = insight_store.post_insight(symbol, agent_id, signal, confidence, reasoning, ttl_seconds)
+    return _json_ok({"insight": vars(insight)})
+
+@mcp.tool()
+def get_latest_insights(symbol: str = "") -> str:
+    """
+    [PHASE 3] Get the most recent high-signal insights for a symbol (or all).
+    """
+    rl = _rate_limit("get_latest_insights")
+    if rl:
+        return rl
+    insights = insight_store.get_latest_insights(symbol if symbol else None)
+    return _json_ok({"insights": [vars(i) for i in insights]})
+
 
 @mcp.tool()
 def deposit_paper_funds(asset: str, amount: float) -> str:
@@ -628,6 +669,18 @@ def deposit_paper_funds(asset: str, amount: float) -> str:
         return _json_err("paper_mode_required", "Paper mode is NOT enabled.")
     # Use default user 'agent_zero'
     return _json_ok({"result": paper_engine.deposit("agent_zero", asset, amount)})
+
+@mcp.tool()
+def reset_paper_wallet() -> str:
+    """
+    [PAPER MODE] Clear all balances and trade history to start fresh.
+    """
+    rl = _rate_limit("reset_paper_wallet")
+    if rl:
+        return rl
+    if not PAPER_MODE:
+        return _json_err("paper_mode_required", "Paper mode is NOT enabled.")
+    return _json_ok({"result": paper_engine.reset_wallet("agent_zero")})
 
 # --- Research & Backtest Tools ---
 
@@ -752,6 +805,41 @@ def get_crypto_price(symbol: str, exchange: str = "binance") -> str:
         return rl
     msg = _fetch_price(symbol, exchange)
     return _json_ok({"symbol": symbol, "exchange": exchange, "result": msg})
+
+@mcp.tool()
+def get_multiple_prices(symbols_json: str) -> str:
+    """
+    Get the current prices for multiple cryptocurrencies in a single call.
+    
+    Args:
+        symbols_json: A JSON array of trading pair symbols, e.g., '["BTC/USDT", "ETH/USDT"]'.
+        
+    Returns:
+        JSON object containing prices for all successfully fetched symbols.
+    """
+    rl = _rate_limit("get_multiple_prices")
+    if rl:
+        return rl
+    try:
+        symbols = json.loads(symbols_json)
+        if not isinstance(symbols, list):
+            return _json_err("invalid_input", "symbols_json must be a JSON list of strings.")
+        
+        results = {}
+        for symbol in symbols:
+            try:
+                res = marketdata_bus.fetch_ticker(symbol)
+                results[symbol] = {
+                    "price": res.data.get("last"),
+                    "source": res.source,
+                    "ok": True
+                }
+            except Exception as e:
+                results[symbol] = {"ok": False, "error": str(e)}
+        
+        return _json_ok({"prices": results})
+    except Exception as e:
+        return _json_err("parse_error", f"Failed to parse symbols_json: {str(e)}")
 
 @mcp.tool()
 def get_marketdata_capabilities(exchange_id: str = "") -> str:
@@ -897,6 +985,7 @@ def _tool_swap_tokens(
     amount: float,
     chain: str = "ethereum",
     rationale: str = "",
+    insight_id: str = "",
 ) -> str:
     rl = _rate_limit("swap_tokens")
     if rl:
@@ -961,6 +1050,23 @@ def _tool_swap_tokens(
     if gate:
         return gate
 
+    amount = float(amount)
+    from_px = 0.0
+    
+    # Phase 3: Research verification
+    insight_backing = 0.0
+    if insight_id:
+        try:
+            insight = insight_store.get_insight(insight_id)
+            if insight:
+                insight_backing = policy_engine.validate_insight_backing(
+                    symbol=f"{from_token}/{to_token}",
+                    insight_id=insight_id,
+                    insights=[insight]
+                )
+        except Exception as e:
+            return _json_err("insight_verification_failed", str(e))
+
     exec_mode = _get_execution_mode()
     if not venue_allowed(exec_mode, "dex"):
         return _json_err(
@@ -981,6 +1087,19 @@ def _tool_swap_tokens(
         )
 
         if _human_confirmation_enabled():
+            prop = execution_store.create(
+                kind="swap_tokens",
+                payload={
+                    "from_token": from_token,
+                    "to_token": to_token,
+                    "amount": amount,
+                    "chain": chain,
+                    "rationale": rationale,
+                    "insight_id": insight_id,
+                    "insight_confidence": insight_backing
+                },
+                ttl_seconds=120,
+            )
             # Build swap tx proposal (sign/send on confirm)
             from_address = dex_handler.resolve_token(chain, from_token)
             to_address = dex_handler.resolve_token(chain, to_token)
@@ -1075,9 +1194,9 @@ def _tool_swap_tokens(
         return _json_err("swap_error", str(e))
 
 @mcp.tool()
-def swap_tokens(from_token: str, to_token: str, amount: float, chain: str = "ethereum", rationale: str = "") -> str:
+def swap_tokens(from_token: str, to_token: str, amount: float, chain: str = "ethereum", rationale: str = "", insight_id: str = "") -> str:
     """Swap tokens on a DEX (paper mode or live; subject to consent, EXECUTION_MODE, and policy limits)."""
-    return _tool_swap_tokens(from_token=from_token, to_token=to_token, amount=amount, chain=chain, rationale=rationale)
+    return _tool_swap_tokens(from_token=from_token, to_token=to_token, amount=amount, chain=chain, rationale=rationale, insight_id=insight_id)
 
 
 def _tool_place_cex_order(
@@ -1089,6 +1208,7 @@ def _tool_place_cex_order(
     exchange: str = "binance",
     market_type: str = "spot",
     idempotency_key: str = "",
+    insight_id: str = "",
 ) -> str:
     rl = _rate_limit("place_cex_order")
     if rl:
@@ -1189,17 +1309,34 @@ def _tool_place_cex_order(
         # Optional idempotency: if provided, reuse result/proposal for duplicate requests.
         # (In MCP, this is useful for agent retries and to avoid duplicate orders.)
 
+        # Phase 3: Research verification
+        insight_backing = 0.0
+        if insight_id:
+            try:
+                insight = insight_store.get_insight(insight_id)
+                if insight:
+                    insight_backing = policy_engine.validate_insight_backing(
+                        symbol=symbol,
+                        insight_id=insight_id,
+                        insights=[insight]
+                    )
+            except Exception as e:
+                return _json_err("insight_verification_failed", str(e))
+
+        exec_mode = _get_execution_mode()
         if _human_confirmation_enabled():
             prop = execution_store.create(
                 kind="place_cex_order",
                 payload={
                     "exchange": exchange,
                     "symbol": symbol,
-                    "market_type": market_type,
                     "side": side,
                     "amount": amount,
                     "order_type": order_type,
                     "price": price,
+                    "market_type": market_type,
+                    "insight_id": insight_id,
+                    "insight_confidence": insight_backing
                 },
                 ttl_seconds=120,
             )
@@ -1315,8 +1452,9 @@ def place_cex_order(
     exchange: str = "binance",
     market_type: str = "spot",
     idempotency_key: str = "",
+    insight_id: str = "",
 ) -> str:
-    """Place a CEX order (paper mode simulates; live requires consent, EXECUTION_MODE, and policy limits)."""
+    """Place a CEX order (market or limit)."""
     return _with_observability(
         "place_cex_order",
         lambda: _tool_place_cex_order(
@@ -1328,6 +1466,7 @@ def place_cex_order(
             exchange=exchange,
             market_type=market_type,
             idempotency_key=idempotency_key,
+            insight_id=insight_id,
         ),
     )
 
@@ -2466,6 +2605,47 @@ def _tool_confirm_execution(request_id: str, confirm_token: str) -> str:
             ex = CexExecutor(exchange_id=exchange, market_type=market_type)
             order = ex.place_order(symbol=symbol, side=side, amount=amount, order_type=order_type, price=price)
             return _json_ok({"request_id": request_id, "kind": kind, "order": ex.normalize_order(order)})
+
+        if kind == "aave_supply":
+            chain = payload["chain"]
+            w3 = _get_web3(chain)
+            signer = get_signer()
+            # Policy check could be added here
+            client = AaveV3Client(w3, int(w3.eth.chain_id))
+            tx = client.build_supply_tx(payload["asset"], int(payload["amount_wei"]), signer.get_address())
+            signed = signer.sign_transaction(tx, chain_id=int(w3.eth.chain_id))
+            tx_hash = w3.eth.send_raw_transaction(signed.rawTransaction)
+            return _json_ok({"request_id": request_id, "kind": kind, "tx_hash": w3.to_hex(tx_hash)})
+
+        if kind == "aave_borrow":
+            chain = payload["chain"]
+            w3 = _get_web3(chain)
+            signer = get_signer()
+            client = AaveV3Client(w3, int(w3.eth.chain_id))
+            tx = client.build_borrow_tx(payload["asset"], int(payload["amount_wei"]), signer.get_address(), int(payload.get("rate_mode", 2)))
+            signed = signer.sign_transaction(tx, chain_id=int(w3.eth.chain_id))
+            tx_hash = w3.eth.send_raw_transaction(signed.rawTransaction)
+            return _json_ok({"request_id": request_id, "kind": kind, "tx_hash": w3.to_hex(tx_hash)})
+
+        if kind == "uni_v3_mint":
+            chain = payload["chain"]
+            w3 = _get_web3(chain)
+            signer = get_signer()
+            client = UniswapV3Client(w3, int(w3.eth.chain_id))
+            tx = client.build_mint_tx(payload, signer.get_address())
+            signed = signer.sign_transaction(tx, chain_id=int(w3.eth.chain_id))
+            tx_hash = w3.eth.send_raw_transaction(signed.rawTransaction)
+            return _json_ok({"request_id": request_id, "kind": kind, "tx_hash": w3.to_hex(tx_hash)})
+
+        if kind == "uni_v3_collect_fees":
+            chain = payload["chain"]
+            w3 = _get_web3(chain)
+            signer = get_signer()
+            client = UniswapV3Client(w3, int(w3.eth.chain_id))
+            tx = client.build_collect_tx(int(payload["token_id"]), signer.get_address(), signer.get_address())
+            signed = signer.sign_transaction(tx, chain_id=int(w3.eth.chain_id))
+            tx_hash = w3.eth.send_raw_transaction(signed.rawTransaction)
+            return _json_ok({"request_id": request_id, "kind": kind, "tx_hash": w3.to_hex(tx_hash)})
 
         return _json_err("unknown_kind", "Unknown execution kind.", {"request_id": request_id, "kind": kind})
     except PolicyError as e:

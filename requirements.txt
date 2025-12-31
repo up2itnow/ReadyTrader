@@ -12,3 +12,6 @@ praw==7.8.1
 newsapi-python==0.2.7
 RestrictedPython==8.1
 websockets==15.0.1
+feedparser==6.0.11
+fastapi==0.115.5
+uvicorn==0.32.1
