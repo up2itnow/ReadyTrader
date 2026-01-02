@@ -36,4 +36,3 @@ def test_signer_policy_allows_when_no_rules(monkeypatch):
     s = PolicyEnforcedSigner(inner, cfg)
     out = s.sign_transaction({"to": "0xany", "value": 0}, chain_id=1)
     assert out.rawTransaction == b"\x00"
-

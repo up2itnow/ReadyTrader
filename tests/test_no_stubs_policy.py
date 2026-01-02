@@ -17,6 +17,14 @@ def _is_excluded(path: Path) -> bool:
         return True
     if "__pycache__" in parts:
         return True
+    if ".venv" in parts:
+        return True
+    if "venv" in parts:
+        return True
+    if "env" in parts:
+        return True
+    if "coverage_html" in parts:
+        return True
     return False
 
 
@@ -47,4 +55,3 @@ def test_no_stubs_or_todos_in_runtime_code() -> None:
                     hits.append(f"{p.relative_to(REPO_ROOT)}:{i}:{line.strip()}")
 
     assert not hits, "Found stub/TODO markers in runtime code:\\n" + "\\n".join(hits)
-

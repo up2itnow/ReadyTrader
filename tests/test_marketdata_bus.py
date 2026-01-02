@@ -69,4 +69,3 @@ def test_bus_outlier_flag(monkeypatch):
     bus2._providers = [p2]
     r2 = bus2.fetch_ticker("BTC/USDT")
     assert r2.meta["outlier"] is True
-

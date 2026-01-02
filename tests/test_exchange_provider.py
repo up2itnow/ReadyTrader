@@ -29,4 +29,3 @@ def test_symbol_normalization_kraken_btc_to_xbt():
     p = ExchangeProvider(exchanges=[ex])
     _ = p.fetch_ticker("BTC/USDT")
     ex.fetch_ticker.assert_called_with("XBT/USDT")
-

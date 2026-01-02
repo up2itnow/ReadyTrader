@@ -66,4 +66,3 @@ def test_get_capabilities_works_without_auth():
         assert cap["exchange_id"] == "binance"
         assert cap["market_type"] == "spot"
         assert cap["resolved_symbol"] == "BTC/USDT"
-

@@ -1,51 +1,53 @@
-
 def test_position_sizing(risk_guardian):
     # Test safe trade
     # Portfolio: 10,000. Trade: 400 (4%) -> OK
-    result = risk_guardian.validate_trade('buy', 'BTC/USDT', 400.0, 10000.0, 0.0)
-    assert result['allowed'] is True
+    result = risk_guardian.validate_trade("buy", "BTC/USDT", 400.0, 10000.0, 0.0)
+    assert result["allowed"] is True
 
     # Test unsafe trade
     # Portfolio: 10,000. Trade: 600 (6%) -> Blocked (>5%)
-    result = risk_guardian.validate_trade('buy', 'BTC/USDT', 600.0, 10000.0, 0.0)
-    assert result['allowed'] is False
-    assert "Position size too large" in result['reason']
+    result = risk_guardian.validate_trade("buy", "BTC/USDT", 600.0, 10000.0, 0.0)
+    assert result["allowed"] is False
+    assert "Position size too large" in result["reason"]
+
 
 def test_falling_knife_protection(risk_guardian):
     # Test normal buy
-    result = risk_guardian.validate_trade('buy', 'BTC/USDT', 100.0, 10000.0, 0.0)
-    assert result['allowed'] is True
+    result = risk_guardian.validate_trade("buy", "BTC/USDT", 100.0, 10000.0, 0.0)
+    assert result["allowed"] is True
 
     # Test buy with bad sentiment
-    result = risk_guardian.validate_trade('buy', 'BTC/USDT', 100.0, 10000.0, -0.6)
-    assert result['allowed'] is False
-    assert "Falling Knife" in result['reason']
+    result = risk_guardian.validate_trade("buy", "BTC/USDT", 100.0, 10000.0, -0.6)
+    assert result["allowed"] is False
+    assert "Falling Knife" in result["reason"]
 
     # Test SELL with bad sentiment (should be allowed, cutting losses)
-    result = risk_guardian.validate_trade('sell', 'BTC/USDT', 100.0, 10000.0, -0.6)
-    assert result['allowed'] is True
+    result = risk_guardian.validate_trade("sell", "BTC/USDT", 100.0, 10000.0, -0.6)
+    assert result["allowed"] is True
+
 
 def test_daily_loss_limit(risk_guardian):
     # Tests Daily Loss Limit (5%)
     # Case 1: No loss -> Allowed
-    result = risk_guardian.validate_trade('buy', 'BTC/USDT', 100.0, 10000.0, 0.0, daily_loss_pct=0.0)
-    assert result['allowed'] is True
-    
+    result = risk_guardian.validate_trade("buy", "BTC/USDT", 100.0, 10000.0, 0.0, daily_loss_pct=0.0)
+    assert result["allowed"] is True
+
     # Case 2: Hit Limit (-5%) -> Blocked
-    result = risk_guardian.validate_trade('buy', 'BTC/USDT', 100.0, 10000.0, 0.0, daily_loss_pct=-0.05)
-    assert result['allowed'] is False
-    assert "Daily Loss Limit Hit" in result['reason']
+    result = risk_guardian.validate_trade("buy", "BTC/USDT", 100.0, 10000.0, 0.0, daily_loss_pct=-0.05)
+    assert result["allowed"] is False
+    assert "Daily Loss Limit Hit" in result["reason"]
+
 
 def test_max_drawdown_limit(risk_guardian):
     # Tests Drawdown Limit (10%)
     # Case 1: Low Drawdown -> Allowed
-    result = risk_guardian.validate_trade('buy', 'BTC/USDT', 100.0, 10000.0, 0.0, current_drawdown_pct=0.05)
-    assert result['allowed'] is True
-    
+    result = risk_guardian.validate_trade("buy", "BTC/USDT", 100.0, 10000.0, 0.0, current_drawdown_pct=0.05)
+    assert result["allowed"] is True
+
     # Case 2: Hit Limit (10%) -> Blocked
-    result = risk_guardian.validate_trade('buy', 'BTC/USDT', 100.0, 10000.0, 0.0, current_drawdown_pct=0.10)
-    assert result['allowed'] is False
-    assert "Max Drawdown Limit" in result['reason']
+    result = risk_guardian.validate_trade("buy", "BTC/USDT", 100.0, 10000.0, 0.0, current_drawdown_pct=0.10)
+    assert result["allowed"] is False
+    assert "Max Drawdown Limit" in result["reason"]
 
 
 def test_paper_engine_risk_metrics_nonzero(tmp_path):

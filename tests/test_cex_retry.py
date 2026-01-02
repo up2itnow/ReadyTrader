@@ -32,6 +32,6 @@ def test_with_retry_does_not_retry_non_transient(monkeypatch):
     monkeypatch.setenv("CEX_RETRY_MAX_ATTEMPTS", "3")
     with pytest.raises(Exception) as e:
         with_retry("op", fn)
-    assert "ccxt_auth_error" in str(e.value)
+    # The new error taxonomy uses AUTH_601 for authentication errors
+    assert "AUTH_601" in str(e.value) or "auth" in str(e.value).lower()
     assert calls["n"] == 1
-

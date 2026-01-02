@@ -35,4 +35,3 @@ def test_remote_signer_get_address_and_sign():
                 payload = kwargs.get("json") or {}
                 assert payload.get("chain_id") == 1
                 assert "intent" in payload
-

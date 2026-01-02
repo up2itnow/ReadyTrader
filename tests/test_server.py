@@ -14,11 +14,12 @@ def test_fetch_price():
     # This was tested in test_market_tools? We can skip or reimplement.
     pass
 
+
 def test_swap_tokens_real():
     # Mock DexHandler and Signer in global_container
-    with patch.object(global_container, 'dex_handler') as mock_dex:
-        with patch.object(global_container, 'signer') as mock_signer:
-            with patch.object(global_container, 'policy_engine'):
+    with patch.object(global_container, "dex_handler") as mock_dex:
+        with patch.object(global_container, "signer") as mock_signer:
+            with patch.object(global_container, "policy_engine"):
                 # Setup
                 settings.PAPER_MODE = False
                 settings.LIVE_TRADING_ENABLED = True
@@ -35,12 +36,12 @@ def test_swap_tokens_real():
                         "gasPrice": "0x3b9aca00",
                     }
                 }
-                
+
                 signed_mock = MagicMock()
                 signed_mock.rawTransaction = b"\x01\x02"
                 mock_signer.sign_transaction.return_value = signed_mock
                 mock_signer.get_address.return_value = "0x0000000000000000000000000000000000000001"
-                
+
                 # Avoid network: mock nonce fetch + broadcast + decimals lookup
                 with patch("app.tools.execution.get_web3") as mock_get_web3:
                     mock_w3 = MagicMock()
@@ -51,45 +52,51 @@ def test_swap_tokens_real():
                             # Run
                             res_str = swap_tokens(from_token="USDC", to_token="WETH", amount=1.0, chain="ethereum")
                             res = json.loads(res_str)
-                
+
                 # Verify
                 assert res["ok"] is True
                 assert res["data"]["mode"] == "live"
                 assert res["data"]["venue"] == "dex"
                 assert res["data"]["tx_hash"] == "0xHASH"
-                
+
+
 def test_place_cex_order_blocked_when_mode_dex():
     with patch.dict("os.environ", {"EXECUTION_MODE": "dex"}):
-        #Reload settings? settings loading is cached. We must patch the settings object.
-        with patch.object(settings, 'EXECUTION_MODE', 'dex'):
+        # Reload settings? settings loading is cached. We must patch the settings object.
+        with patch.object(settings, "EXECUTION_MODE", "dex"):
             res_str = place_cex_order("BTC/USDT", "buy", 0.01, exchange="binance")
             res = json.loads(res_str)
             assert res["ok"] is False
             assert res["error"]["code"] == "execution_mode_blocked"
 
+
 def test_place_cex_order_paper_mode():
-    with patch.object(settings, 'PAPER_MODE', True):
-        with patch.object(settings, 'EXECUTION_MODE', 'auto'):
-            with patch.object(global_container, 'paper_engine') as mock_engine:
+    with patch.object(settings, "PAPER_MODE", True):
+        with patch.object(settings, "EXECUTION_MODE", "auto"):
+            with patch.object(global_container, "paper_engine") as mock_engine:
                 mock_engine.execute_trade.return_value = "Paper Trade Executed"
-                
+
                 res_str = place_cex_order("BTC/USDT", "buy", 0.01)
                 res = json.loads(res_str)
-                
+
                 assert res["ok"] is True
                 assert res["data"]["mode"] == "paper"
                 assert "Paper Trade Executed" in res["data"]["result"]
 
-def test_private_ws_paper_mode_blocked():
-     with patch.object(settings, 'PAPER_MODE', True):
-         res_str = start_cex_private_ws("binance", "spot")
-         res = json.loads(res_str)
-         assert res["ok"] is False
-         assert res["error"]["code"] == "paper_mode_not_supported"
 
-def test_private_ws_kraken_poll():
-    with patch.object(settings, 'PAPER_MODE', False):
+def test_private_ws_paper_mode_blocked():
+    with patch.object(settings, "PAPER_MODE", True):
+        res_str = start_cex_private_ws("binance", "spot")
+        res = json.loads(res_str)
+        assert res["ok"] is False
+        assert res["error"]["code"] == "paper_mode_not_supported"
+
+
+def test_private_ws_kraken():
+    """Test Kraken WebSocket stream start - now supports native WS."""
+    with patch.object(settings, "PAPER_MODE", False):
         res_str = start_cex_private_ws("kraken", "spot")
         res = json.loads(res_str)
         assert res["ok"] is True
-        assert res["data"]["mode"] == "poll"
+        # Kraken now has native WS support
+        assert res["data"]["mode"] == "ws"
