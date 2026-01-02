@@ -1,0 +1,176 @@
+# ReadyTrader-Crypto LIVE TRADING Stack
+#
+# ⚠️  WARNING: This configuration is for LIVE TRADING with REAL FUNDS
+# ⚠️  Review ALL settings before deploying. Misconfiguration can result in loss of funds.
+#
+# Usage:
+#   docker-compose -f docker-compose.live.yml up -d
+#
+# Prerequisites:
+#   1. Complete RELEASE_READINESS_CHECKLIST.md
+#   2. Review docs/SECURITY_REVIEW.md
+#   3. Configure .env.live with production secrets
+#   4. Test thoroughly in paper mode first
+#
+# Key differences from docker-compose.yml:
+#   - PAPER_MODE=false (live execution enabled)
+#   - SIGNER_TYPE=remote (no raw private keys in container)
+#   - TRADING_HALTED=true (must explicitly enable)
+#   - Strict policy limits enforced
+
+version: '3.8'
+
+services:
+  # ===========================================================================
+  # Core API Server (Live Mode)
+  # ===========================================================================
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: api
+    container_name: readytrader-api-live
+    restart: unless-stopped
+    ports:
+      - "${API_PORT:-8000}:8000"
+    environment:
+      # === LIVE MODE SETTINGS ===
+      # These are the key differences from paper mode
+      - PAPER_MODE=false
+      - LIVE_TRADING_ENABLED=true
+      - TRADING_HALTED=${TRADING_HALTED:-true}  # Default halted - must explicitly enable
+      - DEV_MODE=false
+
+      # === SIGNER CONFIGURATION (CRITICAL) ===
+      # Remote signer is REQUIRED for live trading
+      # Do NOT use env_private_key in production
+      - SIGNER_TYPE=${SIGNER_TYPE:-remote}
+      - SIGNER_REMOTE_URL=${SIGNER_REMOTE_URL:?SIGNER_REMOTE_URL is required for live trading}
+      - REMOTE_SIGNER_TIMEOUT_SEC=${REMOTE_SIGNER_TIMEOUT_SEC:-30}
+      - REMOTE_SIGNER_RETRY_COUNT=${REMOTE_SIGNER_RETRY_COUNT:-3}
+      - REMOTE_SIGNER_REQUIRE_TLS=${REMOTE_SIGNER_REQUIRE_TLS:-true}
+
+      # === SIGNER POLICY (Defense in Depth) ===
+      - SIGNER_POLICY_ENABLED=${SIGNER_POLICY_ENABLED:-true}
+      - SIGNER_ALLOWED_CHAIN_IDS=${SIGNER_ALLOWED_CHAIN_IDS:?Configure allowed chain IDs}
+      - SIGNER_ALLOWED_TO_ADDRESSES=${SIGNER_ALLOWED_TO_ADDRESSES}
+      - SIGNER_MAX_VALUE_WEI=${SIGNER_MAX_VALUE_WEI:-0}
+      - SIGNER_MAX_GAS=${SIGNER_MAX_GAS:-500000}
+      - SIGNER_DISALLOW_CONTRACT_CREATION=${SIGNER_DISALLOW_CONTRACT_CREATION:-true}
+
+      # === API AUTHENTICATION (REQUIRED) ===
+      - API_HOST=0.0.0.0
+      - API_PORT=8000
+      - API_AUTH_REQUIRED=true
+      - API_JWT_SECRET=${API_JWT_SECRET:?API_JWT_SECRET is required for live trading}
+      - API_ADMIN_USERNAME=${API_ADMIN_USERNAME:-admin}
+      - API_ADMIN_PASSWORD_HASH=${API_ADMIN_PASSWORD_HASH:?Configure admin password hash}
+      - CORS_ORIGINS=${CORS_ORIGINS:?Configure allowed CORS origins}
+
+      # === EXECUTION SETTINGS ===
+      - EXECUTION_MODE=${EXECUTION_MODE:-hybrid}
+      - EXECUTION_APPROVAL_MODE=${EXECUTION_APPROVAL_MODE:-approve_each}  # Require approval
+      - RISK_PROFILE=${RISK_PROFILE:-conservative}
+
+      # === POLICY LIMITS (REQUIRED) ===
+      - ALLOW_CHAINS=${ALLOW_CHAINS:?Configure allowed chains}
+      - ALLOW_TOKENS=${ALLOW_TOKENS:?Configure allowed tokens}
+      - ALLOW_EXCHANGES=${ALLOW_EXCHANGES:?Configure allowed exchanges}
+      - MAX_TRADE_AMOUNT=${MAX_TRADE_AMOUNT:?Configure max trade amount}
+      - MAX_CEX_ORDER_AMOUNT=${MAX_CEX_ORDER_AMOUNT:?Configure max CEX order amount}
+
+      # === CEX CREDENTIALS ===
+      - CEX_API_KEY=${CEX_API_KEY}
+      - CEX_API_SECRET=${CEX_API_SECRET}
+      - CEX_BINANCE_API_KEY=${CEX_BINANCE_API_KEY}
+      - CEX_BINANCE_API_SECRET=${CEX_BINANCE_API_SECRET}
+      - CEX_KRAKEN_API_KEY=${CEX_KRAKEN_API_KEY}
+      - CEX_KRAKEN_API_SECRET=${CEX_KRAKEN_API_SECRET}
+
+      # === MARKET DATA ===
+      - MARKETDATA_EXCHANGES=${MARKETDATA_EXCHANGES:-binance,kraken,coinbase}
+
+      # === PERSISTENCE ===
+      - AUDIT_DB_PATH=/app/data/audit.db
+      - IDEMPOTENCY_DB_PATH=/app/data/idempotency.db
+      - EXECUTION_DB_PATH=/app/data/execution.db
+
+      # === OBSERVABILITY ===
+      - READYTRADER_LOG_LEVEL=${READYTRADER_LOG_LEVEL:-info}
+      - DISCORD_WEBHOOK_URL=${DISCORD_WEBHOOK_URL}
+      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
+      - TELEGRAM_CHAT_ID=${TELEGRAM_CHAT_ID}
+
+    volumes:
+      - readytrader-live-data:/app/data
+    command: ["python", "-m", "uvicorn", "api_server:app", "--host", "0.0.0.0", "--port", "8000"]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    networks:
+      - readytrader-live-net
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+        reservations:
+          memory: 512M
+
+  # ===========================================================================
+  # MCP Server (Live Mode)
+  # ===========================================================================
+  mcp:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: mcp
+    container_name: readytrader-mcp-live
+    restart: unless-stopped
+    stdin_open: true
+    tty: true
+    environment:
+      # Live mode settings
+      - PAPER_MODE=false
+      - LIVE_TRADING_ENABLED=true
+      - TRADING_HALTED=${TRADING_HALTED:-true}
+      - DEV_MODE=false
+
+      # Signer (remote only)
+      - SIGNER_TYPE=${SIGNER_TYPE:-remote}
+      - SIGNER_REMOTE_URL=${SIGNER_REMOTE_URL:?SIGNER_REMOTE_URL is required}
+      - SIGNER_POLICY_ENABLED=${SIGNER_POLICY_ENABLED:-true}
+      - SIGNER_ALLOWED_CHAIN_IDS=${SIGNER_ALLOWED_CHAIN_IDS:?Configure allowed chain IDs}
+
+      # Execution
+      - EXECUTION_MODE=${EXECUTION_MODE:-hybrid}
+      - EXECUTION_APPROVAL_MODE=${EXECUTION_APPROVAL_MODE:-approve_each}
+      - RISK_PROFILE=${RISK_PROFILE:-conservative}
+
+      # Policy limits
+      - ALLOW_CHAINS=${ALLOW_CHAINS:?Configure allowed chains}
+      - ALLOW_TOKENS=${ALLOW_TOKENS:?Configure allowed tokens}
+      - MAX_TRADE_AMOUNT=${MAX_TRADE_AMOUNT:?Configure max trade amount}
+
+      # CEX credentials
+      - CEX_API_KEY=${CEX_API_KEY}
+      - CEX_API_SECRET=${CEX_API_SECRET}
+      - MARKETDATA_EXCHANGES=${MARKETDATA_EXCHANGES:-binance,kraken,coinbase}
+
+      # Persistence
+      - AUDIT_DB_PATH=/app/data/audit.db
+    volumes:
+      - readytrader-live-data:/app/data
+    command: ["python", "app/main.py"]
+    networks:
+      - readytrader-live-net
+
+volumes:
+  readytrader-live-data:
+    driver: local
+
+networks:
+  readytrader-live-net:
+    driver: bridge

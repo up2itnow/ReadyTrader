@@ -1,0 +1,391 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version tag (e.g., v1.0.0)'
+        required: true
+        type: string
+      prerelease:
+        description: 'Mark as pre-release'
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  contents: write
+  packages: write
+  id-token: write
+
+env:
+  PYTHON_VERSION: '3.12'
+  NODE_VERSION: '20'
+
+jobs:
+  # ===========================================================================
+  # Validate Release
+  # ===========================================================================
+  validate:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Determine version
+        id: version
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "version=${{ inputs.version }}" >> $GITHUB_OUTPUT
+          else
+            echo "version=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Validate version format
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          if [[ ! "$VERSION" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9]+)?$ ]]; then
+            echo "Invalid version format: $VERSION"
+            echo "Expected format: vX.Y.Z or vX.Y.Z-suffix"
+            exit 1
+          fi
+
+      - name: Check version in pyproject.toml
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          PYPROJECT_VERSION=$(grep -E '^version = ' pyproject.toml | head -1 | cut -d'"' -f2)
+          EXPECTED_VERSION="${VERSION#v}"
+          if [ "$PYPROJECT_VERSION" != "$EXPECTED_VERSION" ]; then
+            echo "Version mismatch!"
+            echo "  Tag version: $EXPECTED_VERSION"
+            echo "  pyproject.toml: $PYPROJECT_VERSION"
+            exit 1
+          fi
+
+  # ===========================================================================
+  # Run Full Test Suite
+  # ===========================================================================
+  test:
+    runs-on: ubuntu-latest
+    needs: validate
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements-dev.txt
+
+      - name: Run tests with coverage
+        run: |
+          PAPER_MODE=true SIGNER_TYPE=null DEV_MODE=true \
+            pytest --cov=. --cov-report=xml --cov-report=html --cov-fail-under=55
+        env:
+          PAPER_MODE: 'true'
+          SIGNER_TYPE: null
+          DEV_MODE: 'true'
+
+      - name: Upload coverage report
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: |
+            coverage.xml
+            coverage_html/
+          retention-days: 90
+
+  # ===========================================================================
+  # Security Audit
+  # ===========================================================================
+  security:
+    runs-on: ubuntu-latest
+    needs: validate
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements-dev.txt
+
+      - name: Run Bandit security scan
+        run: |
+          bandit -r . -c bandit.yaml -f json -o bandit-results.json || true
+          bandit -r . -c bandit.yaml
+
+      - name: Run pip-audit
+        run: |
+          pip-audit -r requirements.txt --format=json > pip-audit-results.json || true
+          pip-audit -r requirements.txt
+
+      - name: Upload security reports
+        uses: actions/upload-artifact@v4
+        with:
+          name: security-reports
+          path: |
+            bandit-results.json
+            pip-audit-results.json
+          retention-days: 90
+
+  # ===========================================================================
+  # Generate SBOM (Software Bill of Materials)
+  # ===========================================================================
+  sbom:
+    runs-on: ubuntu-latest
+    needs: validate
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install SBOM tools
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install cyclonedx-bom
+          npm install -g @cyclonedx/cyclonedx-npm
+
+      - name: Generate Python SBOM
+        run: |
+          python -m pip install -r requirements.txt
+          cyclonedx-py requirements -i requirements.txt -o sbom-python.json --format json
+
+      - name: Generate Frontend SBOM
+        working-directory: frontend
+        run: |
+          npm ci
+          cyclonedx-npm --output-file ../sbom-frontend.json
+
+      - name: Merge SBOMs
+        run: |
+          python -c "
+          import json
+          with open('sbom-python.json') as f:
+              python_sbom = json.load(f)
+          with open('sbom-frontend.json') as f:
+              frontend_sbom = json.load(f)
+          
+          # Create combined SBOM
+          combined = {
+              'bomFormat': 'CycloneDX',
+              'specVersion': '1.4',
+              'version': 1,
+              'metadata': {
+                  'component': {
+                      'name': 'ReadyTrader-Crypto',
+                      'version': '${{ needs.validate.outputs.version }}'.lstrip('v'),
+                      'type': 'application'
+                  }
+              },
+              'components': python_sbom.get('components', []) + frontend_sbom.get('components', [])
+          }
+          
+          with open('sbom-combined.json', 'w') as f:
+              json.dump(combined, f, indent=2)
+          "
+
+      - name: Upload SBOM artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: sbom
+          path: |
+            sbom-python.json
+            sbom-frontend.json
+            sbom-combined.json
+          retention-days: 90
+
+  # ===========================================================================
+  # Build Docker Image
+  # ===========================================================================
+  build:
+    runs-on: ubuntu-latest
+    needs: [validate, test, security]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: false
+          tags: |
+            readytrader-crypto:${{ needs.validate.outputs.version }}
+            readytrader-crypto:latest
+          outputs: type=docker,dest=/tmp/image.tar
+
+      - name: Upload Docker image
+        uses: actions/upload-artifact@v4
+        with:
+          name: docker-image
+          path: /tmp/image.tar
+          retention-days: 7
+
+      - name: Run Trivy vulnerability scan
+        uses: aquasecurity/trivy-action@0.31.0
+        with:
+          input: /tmp/image.tar
+          format: 'sarif'
+          output: 'trivy-results.sarif'
+          severity: 'CRITICAL,HIGH'
+
+      - name: Upload Trivy results
+        uses: actions/upload-artifact@v4
+        with:
+          name: trivy-scan
+          path: trivy-results.sarif
+          retention-days: 90
+
+  # ===========================================================================
+  # Create GitHub Release
+  # ===========================================================================
+  release:
+    runs-on: ubuntu-latest
+    needs: [validate, test, security, sbom, build]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Prepare release assets
+        run: |
+          mkdir -p release-assets
+          
+          # Copy SBOM files
+          cp artifacts/sbom/*.json release-assets/
+          
+          # Copy security reports
+          cp artifacts/security-reports/*.json release-assets/
+          
+          # Copy coverage report
+          cp artifacts/coverage-report/coverage.xml release-assets/
+          
+          # Create checksums
+          cd release-assets
+          sha256sum *.json *.xml > SHA256SUMS.txt
+
+      - name: Generate release notes
+        id: notes
+        run: |
+          VERSION="${{ needs.validate.outputs.version }}"
+          cat > release-notes.md << 'EOF'
+          ## ReadyTrader-Crypto ${{ needs.validate.outputs.version }}
+          
+          ### Installation
+          
+          ```bash
+          # Docker (recommended)
+          docker pull ghcr.io/up2itnow/readytrader-crypto:${{ needs.validate.outputs.version }}
+          
+          # Or build from source
+          git checkout ${{ needs.validate.outputs.version }}
+          pip install -r requirements.txt
+          ```
+          
+          ### Safety Reminders
+          
+          ⚠️ **Always start in paper mode** (`PAPER_MODE=true`)
+          
+          Before enabling live trading:
+          1. Complete the [Release Readiness Checklist](RELEASE_READINESS_CHECKLIST.md)
+          2. Review [Security Review](docs/SECURITY_REVIEW.md)
+          3. Configure remote signer (do NOT use `env_private_key` in production)
+          4. Set strict policy limits (`ALLOW_CHAINS`, `MAX_TRADE_AMOUNT`, etc.)
+          
+          ### Artifacts
+          
+          | File | Description |
+          |------|-------------|
+          | `sbom-combined.json` | Software Bill of Materials (CycloneDX) |
+          | `sbom-python.json` | Python dependencies SBOM |
+          | `sbom-frontend.json` | Frontend dependencies SBOM |
+          | `bandit-results.json` | Security scan results |
+          | `pip-audit-results.json` | Dependency vulnerability audit |
+          | `coverage.xml` | Test coverage report |
+          | `SHA256SUMS.txt` | Checksums for all artifacts |
+          
+          ### What's Changed
+          
+          See [CHANGELOG.md](CHANGELOG.md) for detailed changes.
+          
+          ---
+          
+          **Full Changelog**: https://github.com/up2itnow/ReadyTrader-Crypto/compare/...v${{ needs.validate.outputs.version }}
+          EOF
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: ${{ needs.validate.outputs.version }}
+          name: ReadyTrader-Crypto ${{ needs.validate.outputs.version }}
+          body_path: release-notes.md
+          draft: false
+          prerelease: ${{ inputs.prerelease || false }}
+          files: |
+            release-assets/sbom-combined.json
+            release-assets/sbom-python.json
+            release-assets/sbom-frontend.json
+            release-assets/bandit-results.json
+            release-assets/pip-audit-results.json
+            release-assets/coverage.xml
+            release-assets/SHA256SUMS.txt
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # ===========================================================================
+  # Post-Release Summary
+  # ===========================================================================
+  summary:
+    runs-on: ubuntu-latest
+    needs: [validate, release]
+    if: always()
+    steps:
+      - name: Generate summary
+        run: |
+          echo "# Release Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Version:** ${{ needs.validate.outputs.version }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "## Status" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Job | Status |" >> $GITHUB_STEP_SUMMARY
+          echo "|-----|--------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Validate | ${{ needs.validate.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Release | ${{ needs.release.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "## Next Steps" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "1. Verify release at: https://github.com/up2itnow/ReadyTrader-Crypto/releases/tag/${{ needs.validate.outputs.version }}" >> $GITHUB_STEP_SUMMARY
+          echo "2. Update documentation if needed" >> $GITHUB_STEP_SUMMARY
+          echo "3. Announce release (use safe claims from docs/POSITIONING.md)" >> $GITHUB_STEP_SUMMARY

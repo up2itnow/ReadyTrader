@@ -4,68 +4,123 @@ This checklist is meant to be used before any public release or major announceme
 
 ### 1) Scope & versioning
 
-- [ ] **Define release scope** (features included, features explicitly excluded)
-- [ ] **Version bump** in `pyproject.toml` (and/or tag strategy documented)
-- [ ] **Changelog entry** created (what changed, what broke, what to watch)
+- [x] **Define release scope** (features included, features explicitly excluded)
+- [x] **Version bump** in `pyproject.toml` (and/or tag strategy documented)
+- [x] **Changelog entry** created (what changed, what broke, what to watch)
 
 ### 2) Repo hygiene & governance
 
-- [ ] **License present** (`LICENSE`)
-- [ ] **Prominent disclaimer** present (`README.md` + `DISCLAIMER.md`)
-- [ ] **Security policy** present (`SECURITY.md`)
-- [ ] **Contributing guide** present (`CONTRIBUTING.md`)
-- [ ] **CI is required** for PRs (branch protection recommended)
-- [ ] **No secrets in repo** (scan git history if needed)
+- [x] **License present** (`LICENSE`)
+- [x] **Prominent disclaimer** present (`README.md` + `DISCLAIMER.md`)
+- [x] **Security policy** present (`SECURITY.md`)
+- [x] **Contributing guide** present (`CONTRIBUTING.md`)
+- [x] **CI is required** for PRs (branch protection recommended)
+- [x] **No secrets in repo** (scan git history if needed)
 
 ### 3) Build & install reproducibility
 
-- [ ] `requirements.txt` is **runtime-only** and pinned
-- [ ] `requirements-dev.txt` exists for **tests + lint + security tooling**
-- [ ] `Dockerfile` builds cleanly from scratch (no missing files)
-- [ ] `.dockerignore` excludes secrets/tests/CI-only artifacts
-- [ ] `python-version` matches `pyproject.toml` (`>=3.12`)
+- [x] `requirements.txt` is **runtime-only** and pinned
+- [x] `requirements-dev.txt` exists for **tests + lint + security tooling**
+- [x] `Dockerfile` builds cleanly from scratch (no missing files)
+- [x] `.dockerignore` excludes secrets/tests/CI-only artifacts
+- [x] `python-version` matches `pyproject.toml` (`>=3.12`)
 
 ### 4) Documentation completeness (minimum viable trust)
 
-- [ ] **README is accurate** (features, limitations, supported venues, safety model)
-- [ ] **Full tool catalog** exists and is up-to-date (`docs/TOOLS.md`)
-- [ ] **Configuration template** exists (`env.example`) and matches code
-- [ ] **Runbook** exists and is practical (`RUNBOOK.md`)
-- [ ] “How to run checks locally” documented (`CONTRIBUTING.md`)
+- [x] **README is accurate** (features, limitations, supported venues, safety model)
+- [x] **Full tool catalog** exists and is up-to-date (`docs/TOOLS.md`)
+- [x] **Configuration template** exists (`env.example`) and matches code
+- [x] **Runbook** exists and is practical (`RUNBOOK.md`)
+- [x] "How to run checks locally" documented (`CONTRIBUTING.md`)
 
 ### 5) Safety & live-trading governance
 
-- [ ] **Safe default**: `PAPER_MODE=true` (no live execution by default)
-- [ ] **Live gating works**:
-  - [ ] `LIVE_TRADING_ENABLED=true` required
-  - [ ] `TRADING_HALTED=true` halts execution
-  - [ ] Risk disclosure consent required (per process)
-- [ ] **Approval mode works**:
-  - [ ] `EXECUTION_APPROVAL_MODE=approve_each` returns proposals
-  - [ ] replay protection (single-use token) and TTL enforced
-- [ ] **Policy engine rules** documented and verified (allowlists/limits)
-- [ ] **Signer abstraction** documented (env key / keystore / remote signer)
+- [x] **Safe default**: `PAPER_MODE=true` (no live execution by default)
+- [x] **Live gating works**:
+  - [x] `LIVE_TRADING_ENABLED=true` required
+  - [x] `TRADING_HALTED=true` halts execution
+  - [x] Risk disclosure consent required (per process)
+- [x] **Approval mode works**:
+  - [x] `EXECUTION_APPROVAL_MODE=approve_each` returns proposals
+  - [x] replay protection (single-use token) and TTL enforced
+- [x] **Policy engine rules** documented and verified (allowlists/limits)
+- [x] **Signer abstraction** documented (env key / keystore / remote signer)
 
 ### 6) Quality gates (must be green)
 
-- [ ] Lint: `ruff check .`
-- [ ] Tests: `pytest -q`
-- [ ] Security static scan: `bandit -q -r . -c bandit.yaml`
-- [ ] Dependency audit: `pip-audit -r requirements.txt`
-- [ ] GitHub Actions CI run is green on `main`
+- [x] Lint: `ruff check .`
+- [x] Tests: `pytest -q`
+- [x] Security static scan: `bandit -q -r . -c bandit.yaml`
+- [x] Dependency audit: `pip-audit -r requirements.txt`
+- [x] GitHub Actions CI run is green on `main`
 
 ### 7) Operator readiness (minimum)
 
-- [ ] `get_health()` returns healthy state in paper mode
-- [ ] `get_metrics_snapshot()` returns sane counters/timers after tool usage
-- [ ] Websocket streams can be started/stopped without crashing the process
-- [ ] Clear troubleshooting steps exist in `RUNBOOK.md`
+- [x] `get_health()` returns healthy state in paper mode
+- [x] `get_metrics_snapshot()` returns sane counters/timers after tool usage
+- [x] Websocket streams can be started/stopped without crashing the process
+- [x] Clear troubleshooting steps exist in `RUNBOOK.md`
 
 ### 8) Release packaging & distribution
 
-- [ ] Tag release (or document why tags aren’t used yet)
-- [ ] GitHub Release notes include:
-  - [ ] upgrade steps
-  - [ ] breaking changes
-  - [ ] safety reminders (paper first)
-- [ ] Announcement copy uses “safe claims” (see `docs/POSITIONING.md`)
+- [x] Tag release (or document why tags aren't used yet)
+- [x] GitHub Release notes include:
+  - [x] upgrade steps
+  - [x] breaking changes
+  - [x] safety reminders (paper first)
+- [x] Announcement copy uses "safe claims" (see `docs/POSITIONING.md`)
+
+______________________________________________________________________
+
+## Production Deployment Checklist
+
+Use this additional checklist when deploying to production with live trading enabled.
+
+### Pre-Deployment
+
+- [ ] Complete all items above
+- [ ] Review `docs/SECURITY_REVIEW.md` checklist
+- [ ] Configure `docker-compose.live.yml` (not the default compose file)
+- [ ] Set `SIGNER_TYPE=remote` (never use `env_private_key` in production)
+- [ ] Configure signer policy (`SIGNER_POLICY_ENABLED=true`)
+- [ ] Set strict policy limits:
+  - [ ] `ALLOW_CHAINS` (e.g., `ethereum,polygon`)
+  - [ ] `ALLOW_TOKENS` (e.g., `eth,usdc,usdt`)
+  - [ ] `ALLOW_EXCHANGES` (e.g., `binance,kraken`)
+  - [ ] `MAX_TRADE_AMOUNT` (e.g., `1000`)
+  - [ ] `MAX_CEX_ORDER_AMOUNT` (e.g., `0.05`)
+- [ ] Enable API authentication (`API_AUTH_REQUIRED=true`)
+- [ ] Configure CORS origins (no wildcards)
+- [ ] Set up monitoring/alerting (Discord/Telegram webhooks)
+
+### Deployment
+
+- [ ] Deploy with `TRADING_HALTED=true` initially
+- [ ] Verify `get_health()` returns healthy
+- [ ] Verify policy limits with small test trades (paper mode)
+- [ ] Enable trading (`TRADING_HALTED=false`) only after validation
+
+### Post-Deployment
+
+- [ ] Monitor audit logs for anomalies
+- [ ] Set up automated security scan schedule (daily)
+- [ ] Document incident response procedures
+- [ ] Schedule credential rotation (see `docs/CUSTODY.md`)
+
+______________________________________________________________________
+
+## Verification Commands
+
+```bash
+# Run all quality gates
+make check
+
+# Run security scans
+make security
+
+# Test Docker build
+make docker-build && make docker-test
+
+# Verify documentation
+python tools/verify_docs.py
+```
