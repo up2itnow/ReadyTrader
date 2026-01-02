@@ -9,15 +9,18 @@ from signing.policy import SignerPolicyViolation
 
 app = FastAPI(title="Sentinel Signer", version="1.0.0")
 
+
 class SignRequest(BaseModel):
     tx: Dict[str, Any]
     chain_id: Optional[int] = None
     intent: Optional[Dict[str, Any]] = None
 
+
 @app.get("/address")
 def get_address():
     signer = get_signer()
     return {"address": signer.get_address()}
+
 
 @app.post("/sign_transaction")
 def sign_transaction(req: SignRequest):
@@ -28,7 +31,7 @@ def sign_transaction(req: SignRequest):
             calculated_intent = build_evm_tx_intent(req.tx, chain_id=req.chain_id)
             if calculated_intent.to_dict() != req.intent:
                 raise HTTPException(status_code=400, detail="Intent mismatch: payload does not match declared intent.")
-        
+
         signed = signer.sign_transaction(req.tx, chain_id=req.chain_id)
         return {"rawTransactionHex": "0x" + signed.rawTransaction.hex()}
     except SignerPolicyViolation as e:

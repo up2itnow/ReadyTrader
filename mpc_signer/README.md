@@ -3,10 +3,12 @@
 This folder contains a **self-hosted**, open-source MPC signing service built on Coinbase’s `cb-mpc` (vendored under `vendor/cb-mpc`).
 
 ### What this provides
+
 - **A single on-chain wallet address** (Ethereum-style) whose signing key is split across **two parties**.
 - The ReadyTrader-Crypto agent never receives a private key; it can only request signatures through policy-guarded signers.
 
 ### How it integrates with ReadyTrader-Crypto
+
 - Run the MPC services (party 0 + party 1).
 - Run `sentinel/app.py` with:
   - `SIGNER_TYPE=cb_mpc_2pc`
@@ -16,7 +18,9 @@ This folder contains a **self-hosted**, open-source MPC signing service built on
   - `SIGNER_REMOTE_URL=http://<sentinel-host>:8888`
 
 ### Running (high level)
+
 You must provide:
+
 - a CA cert (PEM)
 - per-party TLS cert+key (PEM)
 - each party’s expected cert file (PEM)
@@ -24,6 +28,7 @@ You must provide:
 - an HTTP control-plane address for each party
 
 The binary reads these env vars:
+
 - `MPC_ROLE_INDEX`: `0` (leader) or `1` (follower)
 - `MPC_HTTP_LISTEN`: e.g. `0.0.0.0:8787`
 - `MPC_PARTY0_ADDR`: e.g. `0.0.0.0:9787`
@@ -37,12 +42,13 @@ The binary reads these env vars:
 - `MPC_KEYSHARE_PATH`: where this party stores its key share (default: `data/mpc_keyshare.bin`)
 
 Leader endpoints:
+
 - `POST /dkg`: run distributed key generation (first-time setup)
 - `POST /sign_digest`: sign a 32-byte digest (hex)
 - `GET /address`: return the derived EVM address once initialized
 
 ### Notes
+
 - This is **real MPC** (no mocks). It requires both parties online to sign.
 - Protect the party keyshare volumes as secrets.
 - For production, run parties on separate hosts/VMs and restrict networking.
-

@@ -1,18 +1,15 @@
-from fastmcp import FastMCP
+"""
+Backwards-compatible entrypoint.
 
-from app.tools.execution import register_execution_tools
-from app.tools.market_data import register_market_tools
-from app.tools.research import register_research_tools
-from app.tools.trading import register_trading_tools
+`server.py` is the canonical FastMCP entrypoint and tool registry.
+This module re-exports `mcp` for imports like `from app.main import mcp`.
+"""
 
-# Initialize FastMCP server
-mcp = FastMCP("ReadyTrader-Crypto")
+from __future__ import annotations
 
-# Register Tools
-register_market_tools(mcp)
-register_trading_tools(mcp)
-register_research_tools(mcp)
-register_execution_tools(mcp)
+from server import main, mcp
+
+__all__ = ["main", "mcp"]
 
 if __name__ == "__main__":
-    mcp.run()
+    main()

@@ -27,6 +27,25 @@ pytest -q
 - **Pass**: exit code 0
 - **Policy**: no stub tests (`pass`) in the suite once we reach 10/10.
 
+### Coverage (pytest-cov)
+
+Core runtime modules should meet a minimum coverage threshold.
+
+```bash
+pytest --cov=app \
+  --cov=marketdata \
+  --cov=observability \
+  --cov=execution_store \
+  --cov=idempotency_store \
+  --cov=paper_engine \
+  --cov=policy_engine \
+  --cov=api_server \
+  --cov-report=term-missing:skip-covered \
+  --cov-fail-under=60
+```
+
+> Note: coverage is intentionally scoped to “core runtime modules” and excludes `vendor/` and `frontend/`.
+
 ### Static security scan (bandit)
 
 ```bash
@@ -54,6 +73,28 @@ git diff --exit-code docs/TOOLS.md
 
 - **Pass**: `docs/TOOLS.md` matches the running MCP tool registry.
 
+### Docs format (mdformat)
+
+Markdown documentation should be consistently formatted.
+
+```bash
+mdformat --check docs README.md RUNBOOK.md SECURITY.md CONTRIBUTING.md CHANGELOG.md RELEASE_READINESS_CHECKLIST.md DISCLAIMER.md prompts .github mpc_signer/README.md
+```
+
+- **Pass**: exit code 0
+- **Fix**: rerun the same command without `--check`
+
+### Frontend (optional dashboard)
+
+If the dashboard is a production target, it must lint and build:
+
+```bash
+cd frontend
+npm ci
+npm run lint
+npm run build
+```
+
 ### “No stubs/TODOs” runtime policy
 
 ```bash
@@ -64,19 +105,9 @@ pytest -q tests/test_no_stubs_policy.py
 
 ## Baseline snapshot (captured 2026-01-01)
 
-### What is currently green
+This section is informational; the commands above are the source of truth.
 
-- **Tests**: `pytest -q` passes.
-- **Bandit**: `bandit -q -r . -c bandit.yaml` passes (warnings are informational).
+### Notes / common gotchas
 
-### What is currently red (must be fixed to reach 10/10)
-
-- **Lint**: `ruff check .` fails on:
-  - import ordering in `api_server.py` and `app/tools/execution.py`
-  - unused imports in `signing/cb_mpc_2pc.py`
-- **Dependency audit**: `pip-audit -r requirements.txt` reports vulnerabilities in `starlette==0.41.3`.
-
-### Tool-surface drift (must be eliminated)
-
-- `docs/TOOLS.md` and `tools/generate_tool_docs.py` currently reference a non-existent `server.py`.
-- The docs list tools (e.g., ops/marketdata ingestion/approval helpers) that are not currently implemented/registered under `app/tools/*` + `app/main.py`.
+- **Tool docs drift**: `docs/TOOLS.md` must be committed after running `python tools/generate_tool_docs.py`.
+- **Paper mode**: default mode should not require signing keys; live signing requires explicit signer configuration.

@@ -17,7 +17,7 @@ class AuditLog:
 
     This is OFF by default. Enable by setting `AUDIT_DB_PATH` (or `READYTRADER_AUDIT_DB_PATH`).
     The log is intended for operators to debug and review tool activity.
-    
+
     Compliance Enhancement (Week 4):
     - Added 'previous_hash' to support immutable ledger concept.
     - Added 'export_tax_report' for CSV compliance exports.
@@ -59,9 +59,7 @@ class AuditLog:
             # Tamper-evident hash chain (best-effort): each row stores previous_hash + event_hash
             prev_hash = "0" * 64
             try:
-                row = conn.execute(
-                    "SELECT event_hash FROM audit_events ORDER BY id DESC LIMIT 1"
-                ).fetchone()
+                row = conn.execute("SELECT event_hash FROM audit_events ORDER BY id DESC LIMIT 1").fetchone()
                 if row and row[0]:
                     prev_hash = str(row[0])
             except Exception:
@@ -111,7 +109,7 @@ class AuditLog:
                 ),
             )
             conn.commit()
-    
+
     def export_tax_report(self) -> str:
         """
         Export a CSV report of all successful trade executions.
@@ -119,8 +117,8 @@ class AuditLog:
         """
         conn = self._get_conn()
         if conn is None:
-            return "Timestamp,Type,Details,Status\n" # Empty CSV
-            
+            return "Timestamp,Type,Details,Status\n"  # Empty CSV
+
         with self._lock:
             # Query only successful execution tools
             cursor = conn.execute(
@@ -132,27 +130,27 @@ class AuditLog:
                 """
             )
             rows = cursor.fetchall()
-        
+
         output = io.StringIO()
         writer = csv.writer(output)
         writer.writerow(["Timestamp (ISO)", "Tool", "Venue", "Symbol/Token", "Amount", "Side", "TxHash/OrderID"])
-        
+
         for r in rows:
             ts_ms, tool, summary_str = r
             try:
                 data = json.loads(summary_str)
             except Exception:
                 data = {}
-            
-            iso_time = time.strftime('%Y-%m-%d %H:%M:%S', time.gmtime(ts_ms / 1000))
+
+            iso_time = time.strftime("%Y-%m-%d %H:%M:%S", time.gmtime(ts_ms / 1000))
             venue = data.get("venue") or data.get("exchange") or "unknown"
-            
+
             # Normalize fields based on tool type
             symbol = "N/A"
             amount = "0"
             side = "N/A"
             tx_id = "N/A"
-            
+
             if tool == "swap_tokens":
                 symbol = f"{data.get('from_token')} -> {data.get('to_token')}"
                 amount = data.get("amount")
@@ -169,19 +167,19 @@ class AuditLog:
                 amount = data.get("amount")
                 side = "SEND"
                 tx_id = data.get("tx_hash") or "see_logs"
-            
+
             writer.writerow([iso_time, tool, venue, symbol, amount, side, tx_id])
-            
+
         return output.getvalue()
 
     def _db_path(self) -> str:
         default = "data/audit.db"
         p = (os.getenv("READYTRADER_AUDIT_DB_PATH") or os.getenv("AUDIT_DB_PATH") or default).strip()
         if not os.path.exists(os.path.dirname(p)):
-             try:
-                 os.makedirs(os.path.dirname(p), exist_ok=True)
-             except Exception:
-                 return ""
+            try:
+                os.makedirs(os.path.dirname(p), exist_ok=True)
+            except Exception:
+                return ""
         return p
 
     def _get_conn(self) -> Optional[sqlite3.Connection]:

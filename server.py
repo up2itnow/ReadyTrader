@@ -5,7 +5,7 @@ This is the single source of truth for:
 - MCP server name
 - tool registration order
 
-Other entrypoints (e.g. `app/main.py`) should import `mcp` from here.
+This file is used by tooling/docs/CI. It must be importable in a clean environment.
 """
 
 from __future__ import annotations
@@ -33,4 +33,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

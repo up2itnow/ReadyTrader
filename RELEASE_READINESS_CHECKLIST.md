@@ -3,11 +3,13 @@
 This checklist is meant to be used before any public release or major announcement. It focuses on trust, safety, and reproducibility.
 
 ### 1) Scope & versioning
+
 - [ ] **Define release scope** (features included, features explicitly excluded)
 - [ ] **Version bump** in `pyproject.toml` (and/or tag strategy documented)
 - [ ] **Changelog entry** created (what changed, what broke, what to watch)
 
 ### 2) Repo hygiene & governance
+
 - [ ] **License present** (`LICENSE`)
 - [ ] **Prominent disclaimer** present (`README.md` + `DISCLAIMER.md`)
 - [ ] **Security policy** present (`SECURITY.md`)
@@ -16,6 +18,7 @@ This checklist is meant to be used before any public release or major announceme
 - [ ] **No secrets in repo** (scan git history if needed)
 
 ### 3) Build & install reproducibility
+
 - [ ] `requirements.txt` is **runtime-only** and pinned
 - [ ] `requirements-dev.txt` exists for **tests + lint + security tooling**
 - [ ] `Dockerfile` builds cleanly from scratch (no missing files)
@@ -23,6 +26,7 @@ This checklist is meant to be used before any public release or major announceme
 - [ ] `python-version` matches `pyproject.toml` (`>=3.12`)
 
 ### 4) Documentation completeness (minimum viable trust)
+
 - [ ] **README is accurate** (features, limitations, supported venues, safety model)
 - [ ] **Full tool catalog** exists and is up-to-date (`docs/TOOLS.md`)
 - [ ] **Configuration template** exists (`env.example`) and matches code
@@ -30,6 +34,7 @@ This checklist is meant to be used before any public release or major announceme
 - [ ] “How to run checks locally” documented (`CONTRIBUTING.md`)
 
 ### 5) Safety & live-trading governance
+
 - [ ] **Safe default**: `PAPER_MODE=true` (no live execution by default)
 - [ ] **Live gating works**:
   - [ ] `LIVE_TRADING_ENABLED=true` required
@@ -42,6 +47,7 @@ This checklist is meant to be used before any public release or major announceme
 - [ ] **Signer abstraction** documented (env key / keystore / remote signer)
 
 ### 6) Quality gates (must be green)
+
 - [ ] Lint: `ruff check .`
 - [ ] Tests: `pytest -q`
 - [ ] Security static scan: `bandit -q -r . -c bandit.yaml`
@@ -49,16 +55,17 @@ This checklist is meant to be used before any public release or major announceme
 - [ ] GitHub Actions CI run is green on `main`
 
 ### 7) Operator readiness (minimum)
+
 - [ ] `get_health()` returns healthy state in paper mode
 - [ ] `get_metrics_snapshot()` returns sane counters/timers after tool usage
 - [ ] Websocket streams can be started/stopped without crashing the process
 - [ ] Clear troubleshooting steps exist in `RUNBOOK.md`
 
 ### 8) Release packaging & distribution
+
 - [ ] Tag release (or document why tags aren’t used yet)
 - [ ] GitHub Release notes include:
   - [ ] upgrade steps
   - [ ] breaking changes
   - [ ] safety reminders (paper first)
 - [ ] Announcement copy uses “safe claims” (see `docs/POSITIONING.md`)
-

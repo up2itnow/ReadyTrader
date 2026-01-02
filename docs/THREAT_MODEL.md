@@ -3,6 +3,7 @@
 This document is an operator-focused threat model for ReadyTrader-Crypto when configured for **live trading** (`PAPER_MODE=false`). It is intentionally concise and actionable.
 
 ### Scope
+
 - **In scope**:
   - CEX credentials (`CEX_*`)
   - EVM signing materials (`PRIVATE_KEY`, keystore files, `SIGNER_REMOTE_URL`)
@@ -12,9 +13,10 @@ This document is an operator-focused threat model for ReadyTrader-Crypto when co
   - Exchange-side compromise (assumed handled by exchange security)
   - OS/hypervisor compromise (assumed handled by your infra)
 
----
+______________________________________________________________________
 
 ## Primary assets
+
 - **Funds**: on-chain wallets + exchange balances
 - **Keys**:
   - CEX API keys
@@ -22,11 +24,12 @@ This document is an operator-focused threat model for ReadyTrader-Crypto when co
 - **Execution authority**: ability to place orders / sign transactions
 - **Operational evidence**: audit logs and operator telemetry
 
----
+______________________________________________________________________
 
 ## Threats and mitigations
 
 ### 1) Secret leakage (keys logged or committed)
+
 - **Threat**: accidental logging of secrets; committing `.env`; exposing keystore/password.
 - **Mitigations**:
   - Never commit `.env` (use `env.example`).
@@ -34,12 +37,14 @@ This document is an operator-focused threat model for ReadyTrader-Crypto when co
   - Prefer **keystore** or **remote signer** for production over `PRIVATE_KEY`.
 
 ### 2) Wrong-key / wrong-signer usage
+
 - **Threat**: ReadyTrader-Crypto points at an unintended key and signs from the wrong wallet.
 - **Mitigations**:
   - Use `ALLOW_SIGNER_ADDRESSES` (PolicyEngine) to pin the expected signer address.
   - Use **signer policy wrapper** (`SIGNER_POLICY_*`) to restrict what the signer can sign.
 
 ### 3) Overbroad signing authority (remote signer/HSM proxy)
+
 - **Threat**: remote signer signs any tx presented by client; compromised ReadyTrader-Crypto can drain funds.
 - **Mitigations**:
   - Phase 5 introduces **explicit signing intent** in RemoteSigner requests (`intent` payload).
@@ -51,6 +56,7 @@ This document is an operator-focused threat model for ReadyTrader-Crypto when co
     - `SIGNER_DISALLOW_CONTRACT_CREATION=true`
 
 ### 4) Malicious or stale market data drives bad trades
+
 - **Threat**: stale/outlier tick causes market order at wrong time/venue.
 - **Mitigations**:
   - Phase 3 guardrails:
@@ -59,21 +65,24 @@ This document is an operator-focused threat model for ReadyTrader-Crypto when co
   - Prefer websocket-first + ingest-first for trusted feeds.
 
 ### 5) Execution replay / double-submit from agent retries
+
 - **Threat**: an agent retries and duplicates an order or tx.
 - **Mitigations**:
   - Use `idempotency_key` wherever supported (CEX order placement, swaps).
   - Use approve-each mode for early deployments (`EXECUTION_APPROVAL_MODE=approve_each`).
 
 ### 6) Operator mistakes / unsafe configuration
+
 - **Threat**: loosening limits too far, disabling policy allowlists, enabling live trading without supervision.
 - **Mitigations**:
   - Live-trading consent gate + kill switch (`TRADING_HALTED=true`).
   - Advanced Risk Mode requires additional consent.
   - Keep policy allowlists/limits enabled in production.
 
----
+______________________________________________________________________
 
 ## Recommended production baseline
+
 - **Execution**:
   - start with `EXECUTION_APPROVAL_MODE=approve_each`
   - use `TRADING_HALTED=true` by default; enable only during controlled windows
@@ -84,4 +93,3 @@ This document is an operator-focused threat model for ReadyTrader-Crypto when co
 - **Market data**:
   - enable `MARKETDATA_FAIL_CLOSED=true`
   - use WS + trusted ingest feeds; REST as fallback
-
