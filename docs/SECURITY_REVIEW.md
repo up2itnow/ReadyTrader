@@ -177,10 +177,15 @@ ______________________________________________________________________
 
 ## Ongoing Security Practices
 
+### Daily (Automated)
+
+- [x] Security audit workflow runs automatically (pip-audit, Bandit, npm audit, Trivy, CodeQL)
+- [x] SBOM generation for Python and frontend dependencies
+
 ### Weekly
 
+- [ ] Review automated security audit results and address any findings
 - [ ] Review audit logs for anomalies
-- [ ] Check for new dependency vulnerabilities
 - [ ] Verify monitoring/alerting is functioning
 
 ### Monthly

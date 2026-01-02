@@ -31,7 +31,7 @@ The core philosophy of this project is a strict separation of powers:
 1. **Research:** You ask your agent, "Find a good entry for BTC." The agent calls `fetch_ohlcv` and `get_sentiment`.
 1. **Proposal:** The agent concludes, "BTC is oversold; I want to buy $100." It calls `place_limit_order`.
 1. **Governance:** The MCP server checks its rules. Is $100 within your `MAX_TRADE_AMOUNT`? If yes, it creates a **Pending Execution**.
-1. **Consent:** If you've enabled "Human-in-the-loop," the agent notifies you. You click **Confirm** in the [Web UI](#-optional-web-ui), and only then does the trade hit the exchange.
+1. **Consent:** If you've enabled "Human-in-the-loop," the agent notifies you. You click **Confirm** in the [Web UI](#premium-nextjs-dashboard), and only then does the trade hit the exchange.
 
 ______________________________________________________________________
 
@@ -407,7 +407,7 @@ These safety mechanisms are continuously verified:
 | :------------------ | :-------------- | :------------------------- |
 | **CI**              | Push/PR         | Full quality gates + tests |
 | **Live-Path Tests** | Manual dispatch | Exchange sandbox testing   |
-| **Security Audit**  | Weekly + manual | SBOM, CVE scan, CodeQL     |
+| **Security Audit**  | Daily + manual  | SBOM, CVE scan, CodeQL     |
 
 ### Running Tests Locally
 
