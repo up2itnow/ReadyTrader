@@ -4,6 +4,12 @@ on:
   push:
   pull_request:
 
+# Required permissions for SARIF uploads (Trivy, CodeQL)
+permissions:
+  contents: read
+  security-events: write
+  actions: read
+
 env:
   PYTHON_VERSION: "3.12"
   NODE_VERSION: "20"
@@ -140,7 +146,7 @@ jobs:
           load: true
 
       - name: Run Trivy vulnerability scanner
-        uses: aquasecurity/trivy-action@master
+        uses: aquasecurity/trivy-action@0.31.0
         with:
           image-ref: readytrader-crypto:ci
           format: 'sarif'
@@ -149,8 +155,8 @@ jobs:
           exit-code: '0'
 
       - name: Upload Trivy scan results
-        uses: github/codeql-action/upload-sarif@v3
-        if: always()
+        uses: github/codeql-action/upload-sarif@v4
+        if: always() && hashFiles('trivy-results.sarif') != ''
         with:
           sarif_file: 'trivy-results.sarif'
         continue-on-error: true

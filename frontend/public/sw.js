@@ -74,7 +74,7 @@ self.addEventListener('push', (event) => {
   let data = {};
   try {
     data = event.data ? event.data.json() : {};
-  } catch (e) {
+  } catch {
     data = { title: 'Trade Approval Required', body: event.data?.text() || 'New trade pending' };
   }
 

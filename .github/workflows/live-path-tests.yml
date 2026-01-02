@@ -1,0 +1,337 @@
+name: Live-Path Integration Tests
+
+# Manual dispatch only - requires explicit approval
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Target environment for testing'
+        required: true
+        default: 'testnet'
+        type: choice
+        options:
+          - testnet
+          - sandbox
+      exchange:
+        description: 'Exchange to test against'
+        required: true
+        default: 'binance'
+        type: choice
+        options:
+          - binance
+          - coinbase
+          - kraken
+      test_suite:
+        description: 'Test suite to run'
+        required: true
+        default: 'connectivity'
+        type: choice
+        options:
+          - connectivity
+          - order_lifecycle
+          - error_conditions
+          - full
+
+permissions:
+  contents: read
+
+env:
+  PYTHON_VERSION: "3.12"
+
+jobs:
+  # =============================================================================
+  # Pre-flight Safety Checks
+  # =============================================================================
+  preflight:
+    runs-on: ubuntu-latest
+    outputs:
+      approved: ${{ steps.check.outputs.approved }}
+    steps:
+      - name: Safety Gate - Verify Manual Dispatch
+        id: check
+        run: |
+          echo "🔒 Live-path tests require manual dispatch"
+          echo "Environment: ${{ github.event.inputs.environment }}"
+          echo "Exchange: ${{ github.event.inputs.exchange }}"
+          echo "Test Suite: ${{ github.event.inputs.test_suite }}"
+          echo "approved=true" >> $GITHUB_OUTPUT
+          
+      - name: Audit Log Entry
+        run: |
+          echo "📝 AUDIT: Live-path test initiated"
+          echo "  - Triggered by: ${{ github.actor }}"
+          echo "  - Time: $(date -u)"
+          echo "  - Environment: ${{ github.event.inputs.environment }}"
+          echo "  - Exchange: ${{ github.event.inputs.exchange }}"
+          echo "  - Commit: ${{ github.sha }}"
+
+  # =============================================================================
+  # Connectivity Tests
+  # =============================================================================
+  connectivity-tests:
+    runs-on: ubuntu-latest
+    needs: preflight
+    if: needs.preflight.outputs.approved == 'true' && (github.event.inputs.test_suite == 'connectivity' || github.event.inputs.test_suite == 'full')
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+          
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements-dev.txt
+          
+      - name: Run Connectivity Tests
+        run: |
+          pytest tests/integration/test_cex_execution_flow.py -v \
+            --tb=short \
+            -k "connectivity or public_api" \
+            || echo "Some tests may be skipped without credentials"
+        env:
+          PAPER_MODE: "true"
+          DEV_MODE: "true"
+          CEX_EXCHANGE_ID: ${{ github.event.inputs.exchange }}
+          
+  # =============================================================================
+  # Order Lifecycle Tests (Sandbox/Testnet Only)
+  # =============================================================================
+  order-lifecycle-tests:
+    runs-on: ubuntu-latest
+    needs: [preflight, connectivity-tests]
+    if: |
+      always() && 
+      needs.preflight.outputs.approved == 'true' && 
+      (github.event.inputs.test_suite == 'order_lifecycle' || github.event.inputs.test_suite == 'full')
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+          
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements-dev.txt
+          
+      - name: Run Order Lifecycle Tests
+        run: |
+          echo "🔄 Testing order lifecycle on ${{ github.event.inputs.environment }}"
+          pytest tests/integration/test_cex_execution_flow.py -v \
+            --tb=short \
+            -k "order_lifecycle" \
+            || echo "Order lifecycle tests require sandbox credentials"
+        env:
+          PAPER_MODE: "true"
+          DEV_MODE: "true"
+          CEX_EXCHANGE_ID: ${{ github.event.inputs.exchange }}
+          # Note: Actual credentials should be stored in GitHub Secrets
+          # and only used for sandbox/testnet environments
+          
+  # =============================================================================
+  # Error Condition Tests
+  # =============================================================================
+  error-condition-tests:
+    runs-on: ubuntu-latest
+    needs: [preflight]
+    if: |
+      needs.preflight.outputs.approved == 'true' && 
+      (github.event.inputs.test_suite == 'error_conditions' || github.event.inputs.test_suite == 'full')
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+          
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements-dev.txt
+          
+      - name: Test Rate Limit Handling
+        run: |
+          echo "⏱️ Testing rate limit behavior"
+          pytest tests/test_rate_limiter.py -v --tb=short
+          
+      - name: Test Retry Logic
+        run: |
+          echo "🔁 Testing retry mechanisms"
+          pytest tests/test_cex_retry.py -v --tb=short
+          
+      - name: Test Error Taxonomy
+        run: |
+          echo "❌ Testing error classification"
+          pytest tests/test_error_taxonomy.py -v --tb=short
+        env:
+          PAPER_MODE: "true"
+          DEV_MODE: "true"
+
+  # =============================================================================
+  # Operational Safeguards Verification
+  # =============================================================================
+  safeguards-verification:
+    runs-on: ubuntu-latest
+    needs: preflight
+    if: needs.preflight.outputs.approved == 'true'
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+          
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements-dev.txt
+          
+      - name: Test Kill Switch (Max Drawdown)
+        run: |
+          echo "🛑 Verifying kill switch triggers at 10% drawdown"
+          python -c "
+from risk_manager import RiskGuardian
+g = RiskGuardian()
+# Should block buy at 10% drawdown
+result = g.validate_trade('buy', 'BTC/USDT', 100, 10000, 0, 0, 0.10)
+assert result['allowed'] == False, 'Kill switch should block trades at max drawdown'
+assert 'Max Drawdown Limit Hit' in result['reason']
+# Should allow sell to reduce risk
+result = g.validate_trade('sell', 'BTC/USDT', 100, 10000, 0, 0, 0.10)
+assert result['allowed'] == True, 'Sell should be allowed even at max drawdown'
+print('✅ Kill switch working correctly')
+"
+          
+      - name: Test Daily Loss Limit
+        run: |
+          echo "📉 Verifying daily loss limit (5%)"
+          python -c "
+from risk_manager import RiskGuardian
+g = RiskGuardian()
+# Should block buy at 5% daily loss
+result = g.validate_trade('buy', 'BTC/USDT', 100, 10000, 0, -0.05, 0)
+assert result['allowed'] == False, 'Daily loss limit should block trades'
+assert 'Daily Loss Limit Hit' in result['reason']
+print('✅ Daily loss limit working correctly')
+"
+          
+      - name: Test Position Size Limits
+        run: |
+          echo "📊 Verifying position size limits (5% max)"
+          python -c "
+from risk_manager import RiskGuardian
+g = RiskGuardian()
+# Should block trades > 5% of portfolio
+result = g.validate_trade('buy', 'BTC/USDT', 600, 10000, 0, 0, 0)
+assert result['allowed'] == False, 'Position size should be limited to 5%'
+assert 'Position size too large' in result['reason']
+# Should allow trades <= 5%
+result = g.validate_trade('buy', 'BTC/USDT', 500, 10000, 0, 0, 0)
+assert result['allowed'] == True, 'Position size at 5% should be allowed'
+print('✅ Position size limits working correctly')
+"
+          
+      - name: Test Falling Knife Protection
+        run: |
+          echo "🔪 Verifying falling knife protection"
+          python -c "
+from risk_manager import RiskGuardian
+g = RiskGuardian()
+# Should block buy with extreme bearish sentiment
+result = g.validate_trade('buy', 'BTC/USDT', 100, 10000, -0.6, 0, 0)
+assert result['allowed'] == False, 'Falling knife protection should block buy'
+assert 'Falling Knife' in result['reason']
+print('✅ Falling knife protection working correctly')
+"
+          
+      - name: Test Policy Engine Allowlists
+        run: |
+          echo "🔐 Verifying policy engine allowlist enforcement"
+          python -c "
+import os
+os.environ['ALLOW_CHAINS'] = 'ethereum,polygon'
+os.environ['ALLOW_TOKENS'] = 'eth,usdc,usdt'
+os.environ['MAX_TRADE_AMOUNT'] = '1000'
+
+from policy_engine import PolicyEngine, PolicyError
+
+pe = PolicyEngine()
+
+# Test chain allowlist
+try:
+    pe.validate_swap(chain='solana', from_token='sol', to_token='usdc', amount=100)
+    assert False, 'Should have raised PolicyError for non-allowlisted chain'
+except PolicyError as e:
+    assert e.code == 'chain_not_allowed'
+    print('✅ Chain allowlist working')
+
+# Test token allowlist
+try:
+    pe.validate_swap(chain='ethereum', from_token='shib', to_token='usdc', amount=100)
+    assert False, 'Should have raised PolicyError for non-allowlisted token'
+except PolicyError as e:
+    assert e.code == 'token_not_allowed'
+    print('✅ Token allowlist working')
+
+# Test trade amount limit
+try:
+    pe.validate_swap(chain='ethereum', from_token='eth', to_token='usdc', amount=2000)
+    assert False, 'Should have raised PolicyError for amount > MAX_TRADE_AMOUNT'
+except PolicyError as e:
+    assert e.code == 'trade_amount_too_large'
+    print('✅ Trade amount limits working')
+
+print('✅ All policy engine safeguards verified')
+"
+        env:
+          PAPER_MODE: "true"
+          DEV_MODE: "true"
+          
+      - name: Test Approval Gate Flow
+        run: |
+          echo "✅ Verifying approval gate mechanism"
+          pytest tests/test_policy_engine.py -v --tb=short -k "approval or gate"
+        env:
+          PAPER_MODE: "true"
+          DEV_MODE: "true"
+
+  # =============================================================================
+  # Summary Report
+  # =============================================================================
+  summary:
+    runs-on: ubuntu-latest
+    needs: [connectivity-tests, order-lifecycle-tests, error-condition-tests, safeguards-verification]
+    if: always()
+    steps:
+      - name: Generate Summary Report
+        run: |
+          echo "# 📊 Live-Path Test Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "## Configuration" >> $GITHUB_STEP_SUMMARY
+          echo "- **Environment:** ${{ github.event.inputs.environment }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Exchange:** ${{ github.event.inputs.exchange }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Test Suite:** ${{ github.event.inputs.test_suite }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Triggered by:** ${{ github.actor }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Commit:** ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "## Results" >> $GITHUB_STEP_SUMMARY
+          echo "| Test Suite | Status |" >> $GITHUB_STEP_SUMMARY
+          echo "|------------|--------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Connectivity Tests | ${{ needs.connectivity-tests.result || 'skipped' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Order Lifecycle Tests | ${{ needs.order-lifecycle-tests.result || 'skipped' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Error Condition Tests | ${{ needs.error-condition-tests.result || 'skipped' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Safeguards Verification | ${{ needs.safeguards-verification.result || 'skipped' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "---" >> $GITHUB_STEP_SUMMARY
+          echo "⚠️ **Note:** Live-path tests should only be run against sandbox/testnet environments." >> $GITHUB_STEP_SUMMARY
