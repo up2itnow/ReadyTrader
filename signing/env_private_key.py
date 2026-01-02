@@ -31,4 +31,3 @@ class EnvPrivateKeySigner(Signer):
             tx = dict(tx)
             tx["chainId"] = chain_id
         return Account.sign_transaction(tx, self._account.key)
-

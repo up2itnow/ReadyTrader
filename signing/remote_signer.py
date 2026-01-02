@@ -73,4 +73,3 @@ class RemoteSigner(Signer):
         if raw_hex.startswith("0x"):
             raw_hex = raw_hex[2:]
         return _RemoteSignedTx(rawTransaction=bytes.fromhex(raw_hex))
-

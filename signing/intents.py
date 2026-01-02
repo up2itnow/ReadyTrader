@@ -79,4 +79,3 @@ def build_evm_tx_intent(tx: Dict[str, Any], *, chain_id: int | None) -> EvmTxInt
         gas_price_wei=_to_int(tx.get("gasPrice")),
         nonce=_to_int(tx.get("nonce")),
     )
-

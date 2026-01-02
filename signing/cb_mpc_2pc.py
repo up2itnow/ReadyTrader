@@ -276,4 +276,3 @@ class CoinbaseMpc2pcSigner(Signer):
         ]
         raw = b"\x02" + rlp.encode(inner_signed)
         return _SignedTx(rawTransaction=raw)
-

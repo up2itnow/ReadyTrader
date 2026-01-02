@@ -20,4 +20,3 @@ class Signer(ABC):
     @abstractmethod
     def sign_transaction(self, tx: Dict[str, Any], *, chain_id: int | None = None) -> SignedTx:
         raise NotImplementedError
-

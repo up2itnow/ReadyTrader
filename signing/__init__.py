@@ -4,6 +4,7 @@ from .encrypted_keystore import EncryptedKeystoreSigner
 from .env_private_key import EnvPrivateKeySigner
 from .factory import get_signer
 from .intents import EvmTxIntent, build_evm_tx_intent
+from .null_signer import NullSigner
 from .policy import PolicyEnforcedSigner, SignerPolicyViolation, maybe_wrap_signer
 from .remote_signer import RemoteSigner
 
@@ -14,6 +15,7 @@ __all__ = [
     "EncryptedKeystoreSigner",
     "RemoteSigner",
     "CoinbaseMpc2pcSigner",
+    "NullSigner",
     "get_signer",
     "EvmTxIntent",
     "build_evm_tx_intent",
@@ -21,4 +23,3 @@ __all__ = [
     "SignerPolicyViolation",
     "maybe_wrap_signer",
 ]
-

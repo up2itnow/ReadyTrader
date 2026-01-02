@@ -7,6 +7,7 @@ from .base import Signer
 from .cb_mpc_2pc import CoinbaseMpc2pcSigner
 from .encrypted_keystore import EncryptedKeystoreSigner
 from .env_private_key import EnvPrivateKeySigner
+from .null_signer import NullSigner
 from .policy import maybe_wrap_signer
 from .remote_signer import RemoteSigner
 
@@ -22,7 +23,16 @@ def get_signer() -> Signer:
     - remote: uses SIGNER_REMOTE_URL (HTTP signer / sidecar)
     - cb_mpc_2pc: delegates signing to a Coinbase cb-mpc 2-party signer service (MPC_SIGNER_URL)
     """
-    signer_type = os.getenv("SIGNER_TYPE", "env_private_key").strip().lower()
+    # Safe-by-default behavior:
+    # - In paper mode, if SIGNER_TYPE is not explicitly configured, we use a NullSigner so
+    #   imports/tools/docs generation do not require real keys.
+    from app.core.config import settings
+
+    raw_type = (os.getenv("SIGNER_TYPE") or "").strip()
+    if not raw_type and getattr(settings, "PAPER_MODE", True):
+        return maybe_wrap_signer(NullSigner())
+
+    signer_type = (raw_type or "env_private_key").strip().lower()
     if signer_type == "env_private_key":
         return maybe_wrap_signer(EnvPrivateKeySigner())
     if signer_type == "keystore":
@@ -31,5 +41,6 @@ def get_signer() -> Signer:
         return maybe_wrap_signer(RemoteSigner())
     if signer_type == "cb_mpc_2pc":
         return maybe_wrap_signer(CoinbaseMpc2pcSigner())
+    if signer_type == "null":
+        return maybe_wrap_signer(NullSigner())
     raise ValueError(f"Unsupported SIGNER_TYPE: {signer_type}")
-

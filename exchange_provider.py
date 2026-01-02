@@ -25,11 +25,13 @@ def _parse_timeframe_seconds(timeframe: str) -> Optional[int]:
         return None
     return None
 
+
 def _seconds_to_next_boundary(period_sec: int) -> int:
     now = int(time.time())
     if period_sec <= 0:
         return 0
     return period_sec - (now % period_sec)
+
 
 class ExchangeProvider:
     """
@@ -45,6 +47,7 @@ class ExchangeProvider:
     - When multiple exchanges are configured, it will try each exchange in order until one succeeds.
     - Caches are in-memory only and reset on process restart.
     """
+
     def __init__(self, exchanges: Optional[List[ccxt.Exchange]] = None):
         self._ticker_cache: TTLCache[Tuple[str, str], Dict[str, Any]] = TTLCache(max_items=2048)
         self._ohlcv_cache: TTLCache[Tuple[str, str, str, int], List[Any]] = TTLCache(max_items=1024)
@@ -174,7 +177,7 @@ class ExchangeProvider:
             "default_type": self._get_default_type(),
         }
 
-    def fetch_ohlcv(self, symbol: str, timeframe: str = '1h', limit: int = 100) -> List[Any]:
+    def fetch_ohlcv(self, symbol: str, timeframe: str = "1h", limit: int = 100) -> List[Any]:
         """
         Fetch OHLCV data with fallback + TTL caching.
         """
@@ -201,7 +204,7 @@ class ExchangeProvider:
             except Exception as e:
                 last_error = e
                 continue
-        
+
         ae = classify_exception(last_error) if last_error else AppError("unknown_error", "Unknown error", {})
         raise AppError(
             ae.code,
@@ -235,7 +238,7 @@ class ExchangeProvider:
             except Exception as e:
                 last_error = e
                 continue
-                
+
         ae = classify_exception(last_error) if last_error else AppError("unknown_error", "Unknown error", {})
         raise AppError(
             ae.code,

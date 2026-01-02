@@ -33,6 +33,17 @@ except ImportError:
 
 @dataclass
 class ExecutionProposal:
+    """
+    A two-step execution proposal with state machine:
+
+    States:
+    - pending: created, not yet confirmed/cancelled/expired
+    - confirmed: user approved, ready for execution
+    - executed: execution completed (atomic - cannot re-execute)
+    - cancelled: user cancelled
+    - expired: TTL exceeded without confirmation
+    """
+
     request_id: str
     confirm_token: str
     kind: str
@@ -41,6 +52,28 @@ class ExecutionProposal:
     expires_at: float
     confirmed_at: Optional[float] = None
     cancelled_at: Optional[float] = None
+    executed_at: Optional[float] = None
+    execution_result: Optional[Dict[str, Any]] = None
+    payload_hash: Optional[str] = None  # SHA256 of payload for idempotency validation
+
+    @property
+    def executed(self) -> bool:
+        """Check if proposal has been executed."""
+        return self.executed_at is not None
+
+    @property
+    def status(self) -> str:
+        """Get current proposal status."""
+        now = time.time()
+        if self.executed_at is not None:
+            return "executed"
+        if self.cancelled_at is not None:
+            return "cancelled"
+        if self.expires_at <= now:
+            return "expired"
+        if self.confirmed_at is not None:
+            return "confirmed"
+        return "pending"
 
 
 class ExecutionStore:
@@ -86,10 +119,26 @@ class ExecutionStore:
                 expires_at REAL NOT NULL,
                 confirmed_at REAL,
                 cancelled_at REAL,
+                executed_at REAL,
+                execution_result_json TEXT,
+                payload_hash TEXT,
                 session_id TEXT NOT NULL
             )
             """
         )
+        # Migration: add new columns if they don't exist (for existing databases)
+        try:
+            self._conn.execute("ALTER TABLE execution_proposals ADD COLUMN executed_at REAL")
+        except sqlite3.OperationalError:
+            pass  # Column already exists
+        try:
+            self._conn.execute("ALTER TABLE execution_proposals ADD COLUMN execution_result_json TEXT")
+        except sqlite3.OperationalError:
+            pass
+        try:
+            self._conn.execute("ALTER TABLE execution_proposals ADD COLUMN payload_hash TEXT")
+        except sqlite3.OperationalError:
+            pass
         self._conn.commit()
         return self._conn
 
@@ -100,26 +149,40 @@ class ExecutionStore:
         conn = self._get_conn()
         if conn is None:
             return
+
+        # Compute payload hash for idempotency validation
+        import hashlib
+
+        payload_json = json.dumps(p.payload, sort_keys=True)
+        payload_hash = hashlib.sha256(payload_json.encode()).hexdigest()[:16]
+
+        execution_result_json = json.dumps(p.execution_result) if p.execution_result else None
+
         conn.execute(
             """
             INSERT INTO execution_proposals(
                 request_id, confirm_token, kind, payload_json, created_at, expires_at,
-                confirmed_at, cancelled_at, session_id
+                confirmed_at, cancelled_at, executed_at, execution_result_json, payload_hash, session_id
             )
-            VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(request_id) DO UPDATE SET
               confirmed_at=excluded.confirmed_at,
-              cancelled_at=excluded.cancelled_at
+              cancelled_at=excluded.cancelled_at,
+              executed_at=excluded.executed_at,
+              execution_result_json=excluded.execution_result_json
             """,
             (
                 p.request_id,
                 p.confirm_token,
                 p.kind,
-                json.dumps(p.payload, sort_keys=True),
+                payload_json,
                 float(p.created_at),
                 float(p.expires_at),
                 p.confirmed_at,
                 p.cancelled_at,
+                p.executed_at,
+                execution_result_json,
+                payload_hash,
                 self._session_id,
             ),
         )
@@ -145,6 +208,9 @@ class ExecutionStore:
               expires_at,
               confirmed_at,
               cancelled_at,
+              executed_at,
+              execution_result_json,
+              payload_hash,
               session_id
             FROM execution_proposals
             WHERE request_id = ?
@@ -153,7 +219,7 @@ class ExecutionStore:
         ).fetchone()
         if not row:
             return None
-        if row[8] != self._session_id:
+        if row[11] != self._session_id:
             return None
         try:
             payload = json.loads(row[3]) if row[3] else {}
@@ -161,6 +227,10 @@ class ExecutionStore:
                 payload = {}
         except Exception:
             payload = {}
+        try:
+            execution_result = json.loads(row[9]) if row[9] else None
+        except Exception:
+            execution_result = None
         return ExecutionProposal(
             request_id=str(row[0]),
             confirm_token=str(row[1]),
@@ -170,6 +240,9 @@ class ExecutionStore:
             expires_at=float(row[5]),
             confirmed_at=float(row[6]) if row[6] is not None else None,
             cancelled_at=float(row[7]) if row[7] is not None else None,
+            executed_at=float(row[8]) if row[8] is not None else None,
+            execution_result=execution_result,
+            payload_hash=str(row[10]) if row[10] else None,
         )
 
     def create(self, *, kind: str, payload: Dict[str, Any], ttl_seconds: int = 120) -> ExecutionProposal:
@@ -187,19 +260,14 @@ class ExecutionStore:
             )
             self._items[request_id] = prop
             self._persist(prop)
-            
+
             # Phase 2: Notification callback
             if WebhookManager:
                 # Attempt to extract symbol and amount for a prettier message
                 amount = float(payload.get("amount") or 0.0)
                 symbol = str(payload.get("symbol") or payload.get("from_token", "Unknown"))
-                WebhookManager.notify_approval_required(
-                    kind=kind,
-                    amount=amount,
-                    symbol=symbol,
-                    request_id=request_id
-                )
-            
+                WebhookManager.notify_approval_required(kind=kind, amount=amount, symbol=symbol, request_id=request_id)
+
             return prop
 
     def get(self, request_id: str) -> Optional[ExecutionProposal]:
@@ -278,6 +346,8 @@ class ExecutionStore:
                 raise ValueError("Proposal expired")
             if p.cancelled_at is not None:
                 raise ValueError("Proposal cancelled")
+            if p.executed_at is not None:
+                raise ValueError("Proposal already executed")
             if p.confirmed_at is not None:
                 raise ValueError("Proposal already confirmed")
             if secrets.compare_digest(p.confirm_token, confirm_token) is False:
@@ -287,3 +357,38 @@ class ExecutionStore:
             self._persist(p)
             return p
 
+    def mark_executed(self, request_id: str, result: Optional[Dict[str, Any]] = None) -> bool:
+        """
+        Mark a proposal as executed (atomic - prevents double-execution).
+
+        This must be called after successful execution to prevent the same
+        proposal from being executed again.
+
+        Args:
+            request_id: The proposal request ID
+            result: Optional execution result to store
+
+        Returns:
+            True if marked successfully, False if already executed or not found
+        """
+        with self._lock:
+            p = self._items.get(request_id) or self._load(request_id)
+            if not p:
+                return False
+            if p.executed_at is not None:
+                return False  # Already executed
+            if p.confirmed_at is None:
+                return False  # Not confirmed yet
+            p.executed_at = time.time()
+            p.execution_result = result
+            self._items[request_id] = p
+            self._persist(p)
+            return True
+
+    def is_executed(self, request_id: str) -> bool:
+        """Check if a proposal has been executed."""
+        with self._lock:
+            p = self._items.get(request_id) or self._load(request_id)
+            if not p:
+                return False
+            return p.executed_at is not None

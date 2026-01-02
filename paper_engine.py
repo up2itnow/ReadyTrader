@@ -9,18 +9,18 @@ class PaperTradingEngine:
         self.db_path = db_path or os.getenv("READYTRADER_PAPER_DB_PATH", os.getenv("PAPER_DB_PATH", "data/paper.db"))
         os.makedirs(os.path.dirname(self.db_path), exist_ok=True)
         self._init_db()
-        
+
     def _init_db(self):
         conn = sqlite3.connect(self.db_path)
         c = conn.cursor()
         # Create balances table
-        c.execute('''CREATE TABLE IF NOT EXISTS balances
+        c.execute("""CREATE TABLE IF NOT EXISTS balances
                      (user_id TEXT, asset TEXT, amount REAL, 
-                      PRIMARY KEY (user_id, asset))''')
+                      PRIMARY KEY (user_id, asset))""")
         # Create orders table
         # NOTE: Prior versions had a schema bug (duplicate column names). We create a correct schema here.
         c.execute(
-            '''CREATE TABLE IF NOT EXISTS orders
+            """CREATE TABLE IF NOT EXISTS orders
                      (id INTEGER PRIMARY KEY AUTOINCREMENT,
                       user_id TEXT NOT NULL,
                       timestamp TEXT DEFAULT CURRENT_TIMESTAMP,
@@ -32,27 +32,27 @@ class PaperTradingEngine:
                       type TEXT DEFAULT 'market',
                       status TEXT DEFAULT 'filled',
                       rationale TEXT,
-                      pnl_realized REAL)'''
+                      pnl_realized REAL)"""
         )
 
         # Equity snapshots for real drawdown/daily PnL metrics
         c.execute(
-            '''CREATE TABLE IF NOT EXISTS equity_snapshots
+            """CREATE TABLE IF NOT EXISTS equity_snapshots
                      (id INTEGER PRIMARY KEY AUTOINCREMENT,
                       user_id TEXT NOT NULL,
                       timestamp TEXT DEFAULT CURRENT_TIMESTAMP,
-                      equity_usd REAL NOT NULL)'''
+                      equity_usd REAL NOT NULL)"""
         )
 
         # Asset price cache (derived from executed trades; no external price feed required)
         c.execute(
-            '''CREATE TABLE IF NOT EXISTS asset_prices
+            """CREATE TABLE IF NOT EXISTS asset_prices
                      (asset TEXT PRIMARY KEY,
                       price_usd REAL NOT NULL,
-                      updated_at TEXT DEFAULT CURRENT_TIMESTAMP)'''
+                      updated_at TEXT DEFAULT CURRENT_TIMESTAMP)"""
         )
         conn.commit()
-        
+
         # Schema Migration: ensure required columns exist for older DBs
         cols = {row[1] for row in c.execute("PRAGMA table_info(orders)").fetchall()}
         if "rationale" not in cols:
@@ -64,7 +64,7 @@ class PaperTradingEngine:
         if "status" not in cols:
             c.execute("ALTER TABLE orders ADD COLUMN status TEXT DEFAULT 'filled'")
         conn.commit()
-            
+
         conn.close()
 
     def _now_iso(self) -> str:
@@ -125,7 +125,7 @@ class PaperTradingEngine:
         )
         conn.commit()
         conn.close()
-        
+
     def get_balance(self, user_id: str, asset: str) -> float:
         conn = sqlite3.connect(self.db_path)
         c = conn.cursor()
@@ -133,15 +133,23 @@ class PaperTradingEngine:
         row = c.fetchone()
         conn.close()
         return row[0] if row else 0.0
-        
+
+    def get_balances(self, user_id: str) -> dict[str, float]:
+        """Get all balances for a user as a dictionary."""
+        conn = sqlite3.connect(self.db_path)
+        c = conn.cursor()
+        c.execute("SELECT asset, amount FROM balances WHERE user_id=?", (user_id,))
+        rows = c.fetchall()
+        conn.close()
+        return {asset: float(amount) for asset, amount in rows if amount}
+
     def deposit(self, user_id: str, asset: str, amount: float) -> str:
         current = self.get_balance(user_id, asset)
         new_balance = current + amount
-        
+
         conn = sqlite3.connect(self.db_path)
         c = conn.cursor()
-        c.execute("INSERT OR REPLACE INTO balances (user_id, asset, amount) VALUES (?, ?, ?)",
-                  (user_id, asset, new_balance))
+        c.execute("INSERT OR REPLACE INTO balances (user_id, asset, amount) VALUES (?, ?, ?)", (user_id, asset, new_balance))
         conn.commit()
         conn.close()
         self._snapshot_equity(user_id)
@@ -162,29 +170,28 @@ class PaperTradingEngine:
         """
         Place a limit order. Reserve funds immediately.
         """
-        base, quote = symbol.split('/')
+        base, quote = symbol.split("/")
         total_value = amount * price
-        
+
         # Check simulated balance and reserve
-        if side == 'buy':
+        if side == "buy":
             balance = self.get_balance(user_id, quote)
             if balance < total_value:
                 return f"Insufficient fund. Have {balance} {quote}, need {total_value}"
             # Lock funds (deduct now)
             self.deposit(user_id, quote, -total_value)
-            
-        elif side == 'sell':
+
+        elif side == "sell":
             balance = self.get_balance(user_id, base)
             if balance < amount:
                 return f"Insufficient fund. Have {balance} {base}, need {amount}"
             # Lock funds
             self.deposit(user_id, base, -amount)
-            
+
         conn = sqlite3.connect(self.db_path)
         c = conn.cursor()
         c.execute(
-            "INSERT INTO orders (user_id, side, symbol, amount, price, total_value, type, status) "
-            "VALUES (?, ?, ?, ?, ?, ?, 'limit', 'open')",
+            "INSERT INTO orders (user_id, side, symbol, amount, price, total_value, type, status) VALUES (?, ?, ?, ?, ?, ?, 'limit', 'open')",
             (user_id, side, symbol, amount, price, total_value),
         )
         order_id = c.lastrowid
@@ -197,52 +204,51 @@ class PaperTradingEngine:
         Check and fill open orders based on current price.
         Returns a list of messages for filled orders.
         """
+        # First pass: identify orders to fill and update their status
         conn = sqlite3.connect(self.db_path)
         c = conn.cursor()
-        # Find open orders for this symbol
         c.execute(
-            "SELECT id, user_id, side, amount, price, total_value "
-            "FROM orders WHERE symbol=? AND status='open'",
+            "SELECT id, user_id, side, amount, price, total_value FROM orders WHERE symbol=? AND status='open'",
             (symbol,),
         )
         orders = c.fetchall()
-        
-        filled_msgs = []
-        
+
+        to_fill = []  # Collect orders that need filling
         for order in orders:
             oid, uid, side, amt, price, val = order
-            
-            fill = False
-            if side == 'buy' and current_price <= price:
-                fill = True
-                # Give user the Base asset (Quote was deducted at placement)
-                base = symbol.split('/')[0]
-                self.deposit(uid, base, amt)
-                
-            elif side == 'sell' and current_price >= price:
-                fill = True
-                # Give user the Quote asset (Base was deducted at placement)
-                # But wait, we need to calculate value based on LIMIT price or CURRENT price?
-                # Standard limit order matches at limit or better.
-                # In paper sim, let's settle at the limit price for simplicity (or we can give them the surplus).
-                quote = symbol.split('/')[1]
-                self.deposit(uid, quote, val) # val was amt * limit_price
-                
-            if fill:
-                c.execute("UPDATE orders SET status='filled' WHERE id=?", (oid,))
-                filled_msgs.append(f"Order #{oid} FILLED: {side.upper()} {amt} {symbol} @ {price}")
-                # Update derived price cache from the fill price (best available for metrics)
-                base, quote = symbol.split('/')
-                self._set_asset_price_usd(quote, 1.0 if quote.upper() in {"USDT", "USDC", "DAI", "USD"} else 1.0)
-                # If quote is stable, base USD price = quote_per_base (limit price)
-                if quote.upper() in {"USDT", "USDC", "DAI", "USD"}:
-                    self._set_asset_price_usd(base, float(price))
-                self._snapshot_equity(uid)
-                
+            if side == "buy" and current_price <= price:
+                to_fill.append(("buy", oid, uid, amt, price, val))
+            elif side == "sell" and current_price >= price:
+                to_fill.append(("sell", oid, uid, amt, price, val))
+
+        # Mark orders as filled
+        for fill_side, oid, uid, amt, price, val in to_fill:
+            c.execute("UPDATE orders SET status='filled' WHERE id=?", (oid,))
+
         conn.commit()
         conn.close()
+
+        # Second pass: process fills (outside of DB transaction to avoid locks)
+        filled_msgs = []
+        for fill_side, oid, uid, amt, price, val in to_fill:
+            if fill_side == "buy":
+                base = symbol.split("/")[0]
+                self.deposit(uid, base, amt)
+            else:  # sell
+                quote = symbol.split("/")[1]
+                self.deposit(uid, quote, val)
+
+            filled_msgs.append(f"Order #{oid} FILLED: {fill_side.upper()} {amt} {symbol} @ {price}")
+
+            # Update derived price cache
+            base, quote = symbol.split("/")
+            self._set_asset_price_usd(quote, 1.0 if quote.upper() in {"USDT", "USDC", "DAI", "USD"} else 1.0)
+            if quote.upper() in {"USDT", "USDC", "DAI", "USD"}:
+                self._set_asset_price_usd(base, float(price))
+            self._snapshot_equity(uid)
+
         return filled_msgs
-        
+
     def execute_trade(
         self,
         user_id: str,
@@ -260,52 +266,48 @@ class PaperTradingEngine:
         price: price in quote asset (USDT)
         rationale: reason for the trade
         """
-        base, quote = symbol.split('/')
+        base, quote = symbol.split("/")
         total_value = amount * price
-        
+
         # Check simulated balance
-        if side == 'buy':
+        if side == "buy":
             # Need quote asset (USDT)
             balance = self.get_balance(user_id, quote)
             if balance < total_value:
                 return f"Insufficient fund. Have {balance} {quote}, need {total_value}"
-            
+
             # Update balances
             self.deposit(user_id, quote, -total_value)
             self.deposit(user_id, base, amount)
-            
-        elif side == 'sell':
+
+        elif side == "sell":
             # Need base asset (BTC)
             balance = self.get_balance(user_id, base)
             if balance < amount:
                 return f"Insufficient fund. Have {balance} {base}, need {amount}"
-            
+
             # Update balances
             self.deposit(user_id, base, -amount)
             self.deposit(user_id, quote, total_value)
-            
+
         # Log order
         conn = sqlite3.connect(self.db_path)
         c = conn.cursor()
         c.execute(
-            "INSERT INTO orders (user_id, side, symbol, amount, price, total_value, rationale) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO orders (user_id, side, symbol, amount, price, total_value, rationale) VALUES (?, ?, ?, ?, ?, ?, ?)",
             (user_id, side, symbol, amount, price, total_value, rationale),
         )
         conn.commit()
         conn.close()
 
         # Update derived price cache (if quote looks like USD stable)
-        base, quote = symbol.split('/')
+        base, quote = symbol.split("/")
         if quote.upper() in {"USDT", "USDC", "DAI", "USD"}:
             self._set_asset_price_usd(base, float(price))
             self._set_asset_price_usd(quote, 1.0)
         self._snapshot_equity(user_id)
-        
-        return (
-            f"Paper Trade Executed: {side.upper()} {amount} {symbol} @ {price}. "
-            f"Value: {total_value} {quote}. Rationale: {rationale}"
-        )
+
+        return f"Paper Trade Executed: {side.upper()} {amount} {symbol} @ {price}. Value: {total_value} {quote}. Rationale: {rationale}"
 
     def get_risk_metrics(self, user_id: str) -> Dict[str, float]:
         """

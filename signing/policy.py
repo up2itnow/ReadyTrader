@@ -196,4 +196,3 @@ def maybe_wrap_signer(signer: Signer) -> Signer:
     if not (enabled or has_rules):
         return signer
     return PolicyEnforcedSigner(signer, cfg)
-
