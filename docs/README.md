@@ -21,6 +21,7 @@ ______________________________________________________________________
 | `LIVE_TESTING_PROTOCOL.md` | **NEW** Formal live trading validation protocol |
 | `THREAT_MODEL.md`          | Security threat model for live trading          |
 | `CUSTODY.md`               | Key custody + rotation guidance                 |
+| `SECURITY_REVIEW.md`       | **NEW** Pre-production security checklist       |
 
 ### 3. Performance & Quality
 

@@ -355,6 +355,90 @@ Example `config_json`:
 
 ______________________________________________________________________
 
+## ✅ Production Readiness & Quality Assurance
+
+ReadyTrader-Crypto maintains rigorous quality standards through comprehensive automated testing, security scanning, and operational safeguard verification.
+
+### Test Suites
+
+| Suite                      | Tests | Coverage | Description                                  |
+| :------------------------- | :---: | :------: | :------------------------------------------- |
+| **Unit Tests**             | 180+  |   57%+   | Core functionality, models, utilities        |
+| **Integration Tests**      |  59   |    —     | End-to-end flows, API interactions           |
+| **Operational Safeguards** |  24   |    —     | Kill switch, loss limits, policy enforcement |
+| **Risk Manager**           |   5   |   96%    | Position sizing, drawdown, sentiment checks  |
+| **Policy Engine**          |  12+  |   89%    | Allowlists, signing guardrails, limits       |
+
+### CI/CD Quality Gates
+
+Every commit and PR must pass:
+
+| Check                | Tool          | Purpose                             |
+| :------------------- | :------------ | :---------------------------------- |
+| **Lint**             | `ruff check`  | Code quality, unused imports, style |
+| **Format**           | `ruff format` | Consistent code formatting          |
+| **Type Check**       | `mypy`        | Static type analysis                |
+| **Security Scan**    | `bandit`      | Python security vulnerabilities     |
+| **Dependency Audit** | `pip-audit`   | Known CVEs in dependencies          |
+| **Secret Scan**      | `trufflehog`  | Prevent credential leaks            |
+| **Container Scan**   | `trivy`       | Docker image vulnerabilities        |
+| **CodeQL**           | GitHub        | SAST for Python & JavaScript        |
+| **Frontend Lint**    | `eslint`      | TypeScript/React best practices     |
+| **Docs Format**      | `mdformat`    | Consistent documentation            |
+
+### Operational Safeguards (Verified by Tests)
+
+These safety mechanisms are continuously verified:
+
+| Safeguard              | Threshold        | Behavior                  |
+| :--------------------- | :--------------- | :------------------------ |
+| **Kill Switch**        | 10% max drawdown | Blocks all BUY orders     |
+| **Daily Loss Limit**   | 5% daily loss    | Halts trading for the day |
+| **Position Sizing**    | 5% per trade     | Rejects oversized orders  |
+| **Falling Knife**      | -0.5 sentiment   | Blocks buys in crashes    |
+| **Chain Allowlist**    | Configurable     | Only approved networks    |
+| **Token Allowlist**    | Configurable     | Only approved assets      |
+| **Exchange Allowlist** | Configurable     | Only approved venues      |
+| **Signing Limits**     | Configurable     | Max value, gas, data size |
+
+### GitHub Actions Workflows
+
+| Workflow            | Trigger         | Purpose                    |
+| :------------------ | :-------------- | :------------------------- |
+| **CI**              | Push/PR         | Full quality gates + tests |
+| **Live-Path Tests** | Manual dispatch | Exchange sandbox testing   |
+| **Security Audit**  | Weekly + manual | SBOM, CVE scan, CodeQL     |
+
+### Running Tests Locally
+
+```bash
+# Full test suite
+pytest
+
+# With coverage
+pytest --cov=. --cov-report=term-missing
+
+# Integration tests only
+pytest tests/integration/ -v
+
+# Operational safeguards
+pytest tests/integration/test_operational_safeguards.py -v
+
+# Quality gates
+ruff check . && ruff format --check . && bandit -q -r . -c bandit.yaml
+```
+
+### Security Documentation
+
+| Document                  | Purpose                        |
+| :------------------------ | :----------------------------- |
+| `SECURITY.md`             | Vulnerability reporting policy |
+| `docs/THREAT_MODEL.md`    | Live trading threat analysis   |
+| `docs/CUSTODY.md`         | Key management & rotation      |
+| `docs/SECURITY_REVIEW.md` | Pre-production checklist       |
+
+______________________________________________________________________
+
 ## 📌 Project docs
 
 - `docs/README.md`: docs index / navigation
@@ -364,6 +448,7 @@ ______________________________________________________________________
 - `docs/MARKETDATA.md`: market data routing, freshness scoring, plugins, and guardrails
 - `docs/THREAT_MODEL.md`: operator-focused threat model (live trading)
 - `docs/CUSTODY.md`: key custody + rotation guidance
+- `docs/SECURITY_REVIEW.md`: pre-production security checklist
 - `docs/POSITIONING.md`: credibility-safe marketing + messaging
 - `RELEASE_READINESS_CHECKLIST.md`: what must be green before distribution
 - `CHANGELOG.md`: version-to-version change summary
